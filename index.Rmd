@@ -64,10 +64,7 @@ reports$CurrencyCode <- sapply(reports$CurrencyCode, function(x) ifelse(x %like%
 
 #Join GroupCount to GroupCustom:
 reports <- left_join(reports, CustomGroups, by=c('GroupCustom' = 'CustomGroupCode'))
-
-#Update counts:
-reports$GroupCount <- ifelse(!is.na(reports$GroupFI), 1, reports$GroupCount)
-reports$GroupCount <- ifelse(!is.na(reports$GroupSF), 1, reports$GroupCount)
+reports$CustomGroupCount <- reports$GroupCount
 
 #Function to count groups for currency codes:
 getCCgroups <- function(x = c()){
@@ -77,8 +74,14 @@ getCCgroups <- function(x = c()){
   return(sum(df$GroupCount, na.rm = T))
 }
 
-reports$GroupCount2 <- sapply(reports$CurrencyCode, function(x) getCCgroups(x))
+reports$CurrencyCodeGroups <- sapply(reports$CurrencyCode, function(x) getCCgroups(x))
 
+#Update counts:
+reports$GroupCount <- ifelse(!is.na(reports$GroupFI), 1, reports$GroupCount)
+reports$GroupCount <- ifelse(!is.na(reports$GroupSF), 1, reports$GroupCount)
+reports$GroupCount <- ifelse(is.na(reports$GroupCount), reports$CurrencyCodeGroups, reports$GroupCount)
+#This below needs work:
+reports$GroupCount <- ifelse(reports$CurrencyCodeGroups>0, min(reports$CurrencyCodeGroups, reports$GroupCount),reports$GroupCount)
 
 #Parse XML:
 #df <- reports %>% lapply(as_list(read_xml()))
