@@ -3,14 +3,20 @@ title: "Team DAY Project"
 author: "Dustin Bracy, Adam Ruthford, Yang Zhang"
 date: "1/23/2020"
 output: html_document
+editor_options: 
+  chunk_output_type: console
 ---
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
 library(tidyverse)
+library(data.table) #for %like% function
+library(xml2)
 
 # import report data:
-load('data/reports.Rdata')
+load("./data/reports.RData")
+load("./data/customGroups.RData")
+load("./data/currencyCode.RData")
 
 ```
 
@@ -24,6 +30,111 @@ load('data/reports.Rdata')
 
 ```{r EDA}
 summary(reports)
+
+unique(reports$ReportGroupDescription)
+unique(reports$RptCategoryDesc)
+
+#clean up the XML:
+reports$XMLResponseStringClean <- str_replace(reports$XMLResponseString, '>>', '>')
+reports$XMLResponseStringClean <- str_replace(reports$XMLResponseStringClean, '&', '-and-')
+reports$XMLResponseStringClean <- str_replace(reports$XMLResponseStringClean, 'Transaction Entry Date Thru', 'TransactionEntryDateThru')
+reports$XMLResponseStringClean <- str_replace(reports$XMLResponseStringClean,'(<AgentCode>.*</AgentCode>)<ODRParameters>','<NewDataSet><ODRParameters>\\1')
+
+#Get agent data only:
+reports$AgentXML <- ifelse(
+  reports$XMLResponseString %like% '<Agent', str_trim(str_sub(reports$XMLResponseString,1,str_locate(reports$XMLResponseString, '>>'))), NA)
+
+#Count commas to determine number of Agents
+reports$AgentCount <- str_count(reports$AgentXML, ',') + 1
+reports$AgentCount <- nafill(reports$AgentCount, fill=0)
+sum(reports$AgentCount) #sanity check
+
+#Set Values: extremely slow.. need a better implementation
+reports$GroupSF <- str_replace(reports$XMLResponseStringClean,'.*<GroupSF>(.*)</GroupSF>.*','\\1')
+reports$GroupFI <- str_replace(reports$XMLResponseStringClean,'.*<GroupFI>(.*)</GroupFI>.*','\\1')
+reports$GroupCustom <- str_replace(reports$XMLResponseStringClean,'.*<GroupCustom>(.*)</GroupCustom>.*','\\1')
+reports$CurrencyCode <- str_replace(reports$XMLResponseStringClean,'.*<CurrencyCode>(.*)</CurrencyCode>.*','\\1')
+
+#Cleanup Values:
+reports$GroupSF <- sapply(reports$GroupSF, function(x) ifelse(x %like% '<', NA, x))
+reports$GroupFI <- sapply(reports$GroupFI, function(x) ifelse(x %like% '<', NA, x))
+reports$GroupCustom <- sapply(reports$GroupCustom, function(x) ifelse(x %like% '<', NA, x))
+reports$CurrencyCode <- sapply(reports$CurrencyCode, function(x) ifelse(x %like% '<', NA, x))
+
+
+#Join GroupCount to GroupCustom:
+reports <- left_join(reports, CustomGroups, by=c('GroupCustom' = 'CustomGroupCode'))
+
+#Update counts:
+reports$GroupCount <- ifelse(!is.na(reports$GroupFI), 1, reports$GroupCount)
+reports$GroupCount <- ifelse(!is.na(reports$GroupSF), 1, reports$GroupCount)
+
+#Function to count groups for currency codes:
+getCCgroups <- function(x = c()){
+  x <- toupper(x)
+  df <- setNames(data.frame(cCode=str_split(x,','), stringsAsFactors = F),'ccode')
+  df <- left_join(df, CurrencyCodes, by=c('ccode'='CurrencyCode'))
+  return(sum(df$GroupCount, na.rm = T))
+}
+
+reports$GroupCount2 <- sapply(reports$CurrencyCode, function(x) getCCgroups(x))
+
+
+#Parse XML:
+#df <- reports %>% lapply(as_list(read_xml()))
+
+#as_list(read_xml(reports$XMLResponseStringClean))
+#reports$GroupFI <- as_list(read_xml(reports$XMLResponseStringClean))$NewDataSet$ODRParameters$GroupFI
+#reports$GroupCustom <- reports$xml$NewDataSet$ODRParameters$GroupCustom
+
+
+
+
+```
+
+Notes:
+- I really think we can be smarter about grabbing groupSF/groupFI.  These, if present, indicate the group count is 1. Could save some major time without the str_replace function.
+- getCCgroups is extremely slow.
+
+```{r testing XML}
+# Toying with data in XML, have since abandoned this approach :( 
+x<- read_xml(t)
+xml_children(x)
+groupSf <- xml_find_all(x, './/GroupSF')
+xml_path(groupSf)
+xml_attr(groupSf)
+xml_contents(x)
+test <- reports
+
+xml_attrs(x$node, 'GroupSF')
+
+xml_find_all(x, './/GroupSF') %>% xml_text()
+xml_find_all(x, './/GroupCustom') %>% xml_text() 
+xml_find_all(x, './/CurrencyCode') %>% xml_text()
+
+l <- as_list(x)
+l$NewDataSet$ODRParameters$CurrencyCode[[1]]
+
+test$groupSF <- xml_attr(read_xml(test$XMLResponseStringClean), 'GroupSf')
+
+str_detect(reports$XMLResponseStringClean,'<GroupSF>')
+str_split(reports$XMLResponseStringClean,'<GroupSF>(.*)</GroupSF>')
+
+test$groupCustom <- xml_find_all(read_xml(test$XMLResponseStringClean), './/GroupCustom') %>% xml_text()
+
+
+t <- '<NewDataSet><ODRParameters><AgentCode>TADENTE</AgentCode><CurrencyCode>TA</CurrencyCode><ExcludeDemoGroups>TRUE</ExcludeDemoGroups><CheckDate>USERDATERANGE</CheckDate><CheckDateFrom>20191231</CheckDateFrom><CheckDateThru>20191231</CheckDateThru><PremAppliedDate>NONESPECIFIED</PremAppliedDate><PlanYearDate>NONESPECIFIED</PlanYearDate><DeliverAgntStmt>TRUE</DeliverAgntStmt></ODRParameters></NewDataSet>'
+
+str_extract(t, '.*<AgentCode>(.*)</AgentCode>.*')
+
+xml_path(read_xml(t))
+
+
+doc = read_xml(t)
+xml_contents(doc)
+xml_child(doc)
+
+xx <- read_xml(reports$XMLResponseStringClean)
 
 ```
 
