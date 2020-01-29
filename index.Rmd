@@ -12,6 +12,7 @@ knitr::opts_chunk$set(echo = TRUE)
 library(tidyverse)
 library(data.table) #for %like% function
 library(xml2)
+library(lubridate)
 
 # import report data:
 load("./data/reports.RData")
@@ -21,31 +22,44 @@ load("./data/currencyCode.RData")
 ```
 
 ## Introduction
-We would like to answer the question
-
+We would like to answer the following questions about our data:
+1. Can we accurately predict the runtime of our reports?
+2. What are the best times of day, week, or month to run a report?
+3. What are the worst times of day, week, or month to run a report?
+4. Is there a difference in performance between report servers?
+5. What are the biggest impacts on performance of reports?
 
 ## Data Description
 
-* GroupFI - Fully Insured Clients
-* GroupSF - Self Funded Clients
-* Agents - Number of agents report is ran for
+#### Report Parameters:
+* GroupFI - Fully Insured Client
+* GroupSF - Self Funded Client
+* Agents - Specified agents
 * CurrencyCode - Collection of different lines of business
-* GroupCount - number of client records searched by report
+* GroupCustom - Collection of different client types
 * SchedFreq - Scheduled Report Frequency
+
+#### Report Metrics:
 * ReportBytes - size in bytes of completed report
 * Server - Server on which the report was built
 * FormID - Uniquely identifies collection of report parameters
 * QueueID - Uniquely identifies queued reports
 * QueuedDateTime - when report entered queue
-* RenderStartDateTime - when server began work on queued report(s) in queueID
+* RenderStartDateTime - when server began work on queued report(s) in queueID batch
 * ReportStartDateTime - when server began work on individual report
 * ReportEndDateTime - when server completed work on individual report
-* RenderEndDateTime - when server completed work on queued report(s) queueID
+* RenderEndDateTime - when server completed work on queued report(s) in queueID batch
 * Priority - controlled report parameter
+
+#### Engineered features using data:
 * ReportBuildTime - ReportEndDateTime less ReportStartDateTime
 * ReportDeliveryTime - RenderEndDateTime less QueuedDateTime
 * LagTime - RenderEndDateTime less ReportEndDateTime
 * QueueTime - RenderStartDateTime less QueuedDateTime
+* DayOfMonth - Day of the month report ran
+* DayOfWeek - Day of the week report ran
+* HourOfDay - Hour of the day report ran
+* NumberOfQueuedReports - How many reports are in the queue and/or processing when the report batch begins rendering
 
 ## Exploratory Analysis
 
