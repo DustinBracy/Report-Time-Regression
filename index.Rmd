@@ -158,9 +158,7 @@ reports$GroupCount <- ifelse(is.na(reports$GroupCount), reports$CurrencyCodeGrou
 reports$GroupCount <- ifelse(reports$CurrencyCodeGroups < reports$GroupCount & reports$CurrencyCodeGroups > 0, reports$CurrencyCodeGroups, reports$GroupCount)
 
 # Update report categories:
-cat <- reports %>% select(ReportGroupDescription) %>% arrange() %>% unique()
 
-write.csv(cat, file='cat2.csv', row.names = F)
 
 
 
