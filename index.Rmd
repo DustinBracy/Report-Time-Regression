@@ -21,10 +21,31 @@ load("./data/currencyCode.RData")
 ```
 
 ## Introduction
+We would like to answer the question
 
 
 ## Data Description
 
+* GroupFI - Fully Insured Clients
+* GroupSF - Self Funded Clients
+* Agents - Number of agents report is ran for
+* CurrencyCode - Collection of different lines of business
+* GroupCount - number of client records searched by report
+* SchedFreq - Scheduled Report Frequency
+* ReportBytes - size in bytes of completed report
+* Server - Server on which the report was built
+* FormID - Uniquely identifies collection of report parameters
+* QueueID - Uniquely identifies queued reports
+* QueuedDateTime - when report entered queue
+* RenderStartDateTime - when server began work on queued report(s) in queueID
+* ReportStartDateTime - when server began work on individual report
+* ReportEndDateTime - when server completed work on individual report
+* RenderEndDateTime - when server completed work on queued report(s) queueID
+* Priority - controlled report parameter
+* ReportBuildTime - ReportEndDateTime less ReportStartDateTime
+* ReportDeliveryTime - RenderEndDateTime less QueuedDateTime
+* LagTime - RenderEndDateTime less ReportEndDateTime
+* QueueTime - RenderStartDateTime less QueuedDateTime
 
 ## Exploratory Analysis
 
@@ -37,7 +58,7 @@ reports$XMLResponseStringClean <- str_replace(reports$XMLResponseStringClean, 'T
 reports$XMLResponseStringClean <- str_replace(reports$XMLResponseStringClean,'(<AgentCode>.*</AgentCode>)<ODRParameters>','<NewDataSet><ODRParameters>\\1')
 
 
-# Parse XML values into Columns:
+# Parse XML values into Columns: (this might take a minute or two each)
 reports$GroupCustom <- sapply(reports$XMLResponseStringClean, function(x) 
   ifelse(x %like% '<GroupCustom>', xml_find_all(read_xml(x), './/GroupCustom') %>% xml_text(), NA))
 reports$CurrencyCode <- sapply(reports$XMLResponseStringClean, function(x) 
@@ -66,12 +87,12 @@ reports$CustomGroupCount <- reports$GroupCount
 getCCgroups <- function(x = c()){
   x <- toupper(x)
   df <- setNames(data.frame(cCode=str_split(x,','), stringsAsFactors = F),'ccode')
-  df <- left_join(df, CurrencyCodes, by=c('ccode'='CurrencyCode'))
+  df <- inner_join(df, CurrencyCodes, by=c('ccode'='CurrencyCode'))
   return(sum(df$GroupCount, na.rm = T))
 }
 
 # Build CurrencyCode counts: (this will take a few minutes)
-reports$CurrencyCodeGroups <- sapply(reports$CurrencyCode, function(x) getCCgroups(x))
+reports$CurrencyCodeGroups <- sapply(reports$CurrencyCode, function(x) ifelse(is.na(x), 0, getCCgroups(x)))
 
 
 # Merge counts:
