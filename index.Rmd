@@ -12,6 +12,7 @@ knitr::opts_chunk$set(echo = TRUE)
 library(tidyverse)
 library(data.table) #for %like% function
 library(xml2)
+library(purrr)
 library(lubridate)
 
 # import report data:
@@ -30,6 +31,7 @@ We would like to answer the following questions about our data:
 5. What are the biggest impacts on performance of reports?
 
 ## Data Description
+We have collected a full year worth of report data spanning Jan 2019 - Jan 2020. The available parameter list is very large   A description of fields is avaiable below:
 
 #### Report Parameters:
 * GroupFI - Fully Insured Client
@@ -51,7 +53,7 @@ We would like to answer the following questions about our data:
 * RenderEndDateTime - when server completed work on queued report(s) in queueID batch
 * Priority - controlled report parameter
 
-#### Engineered features using data:
+#### Engineered Features:
 * ReportBuildTime - ReportEndDateTime less ReportStartDateTime
 * ReportDeliveryTime - RenderEndDateTime less QueuedDateTime
 * LagTime - RenderEndDateTime less ReportEndDateTime
@@ -60,6 +62,43 @@ We would like to answer the following questions about our data:
 * DayOfWeek - Day of the week report ran
 * HourOfDay - Hour of the day report ran
 * NumberOfQueuedReports - How many reports are in the queue and/or processing when the report batch begins rendering
+
+
+### Report Category Crosswalk:
+
+Eligibility
+"Eligibility","Accumulator","EventHistory","COBRA","RedCard","ComPsych"
+
+"Miscellaneous"
+
+"Reinsurance","Aggregate Report"
+
+"PL"
+
+Actuarial
+"Actuarial","ISBReports","Renewal",
+
+Finance
+"Deposit","CommCompare","Credit Card Process","CheckRecon","Commissions","CRMOnlineFinance","CommCnt","Check Register","FinancePremium"
+
+Claims
+"ClaimsAudit","CMSRepting","Repository","GilsbarPPO","Claims"
+
+MedicalManagement
+"Wellness Repository","MedCom","TVC","MedInsight"
+
+Metrics
+"iTrac","TMS","Customer Service","ODR Admin","PortalStats","AutoAdjudication","Genelco","Supervisor"
+
+Extract
+"DataExtracts","Large Claims Reports"
+
+Billing
+"Billing", "Premium","Coverage","Refunds"
+
+
+### ReportGroup Crosswalk:
+When = 'CommissionsTFB' override 'renewal' with 'Commissions'
 
 ## Exploratory Analysis
 
@@ -114,6 +153,13 @@ reports$GroupCount <- ifelse(!is.na(reports$groupFI), 1, reports$GroupCount)
 reports$GroupCount <- ifelse(!is.na(reports$groupSF), 1, reports$GroupCount)
 reports$GroupCount <- ifelse(is.na(reports$GroupCount), reports$CurrencyCodeGroups, reports$GroupCount)
 reports$GroupCount <- ifelse(reports$CurrencyCodeGroups < reports$GroupCount & reports$CurrencyCodeGroups > 0, reports$CurrencyCodeGroups, reports$GroupCount)
+
+# Update report categories:
+cat <- reports %>% select(ReportGroupDescription) %>% arrange() %>% unique()
+
+write.csv(cat, file='cat2.csv', row.names = F)
+
+
 
 
 ```
