@@ -69,22 +69,25 @@ We have collected a full year worth of report data spanning Jan 2019 - Jan 2020.
 Eligibility
 "Eligibility","Accumulator","EventHistory","COBRA","RedCard","ComPsych"
 
+Miscellaneous
 "Miscellaneous"
 
+Reinsurance
 "Reinsurance","Aggregate Report"
 
+Professional Liability
 "PL"
 
 Actuarial
 "Actuarial","ISBReports","Renewal",
 
-Finance
-"Deposit","CommCompare","Credit Card Process","CheckRecon","Commissions","CRMOnlineFinance","CommCnt","Check Register","FinancePremium"
+Finance Commission
+"Commissions","CRMOnlineFinance","CommCnt","CommCompare"
 
 Claims
 "ClaimsAudit","CMSRepting","Repository","GilsbarPPO","Claims"
 
-MedicalManagement
+Medical Management
 "Wellness Repository","MedCom","TVC","MedInsight"
 
 Metrics
@@ -93,8 +96,8 @@ Metrics
 Extract
 "DataExtracts","Large Claims Reports"
 
-Billing
-"Billing", "Premium","Coverage","Refunds"
+Finance Billing
+"Billing", "Coverage","Refunds","Credit Card Process","Deposit","CheckRecon","Check Register","FinancePremium", "Premium"
 
 
 ### ReportGroup Crosswalk:
