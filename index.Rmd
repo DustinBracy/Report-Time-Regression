@@ -9,8 +9,6 @@ editor_options:
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
-tic('total runtime')
-
 library(tidyverse)
 library(data.table) #for %like% function
 library(xml2)
@@ -19,6 +17,7 @@ library(lubridate)
 library(tictoc)
 
 # import report data:
+tic('total runtime')
 load("./data/reports.RData")
 load("./data/customGroups.RData")
 load("./data/currencyCode.RData")
