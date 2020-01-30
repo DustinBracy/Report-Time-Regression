@@ -9,11 +9,14 @@ editor_options:
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
+tic('total runtime')
+
 library(tidyverse)
 library(data.table) #for %like% function
 library(xml2)
 library(purrr)
 library(lubridate)
+library(tictoc)
 
 # import report data:
 load("./data/reports.RData")
@@ -107,13 +110,15 @@ When = 'CommissionsTFB' override 'renewal' with 'Commissions'
 
 ```{r ETL pipeline}
 
+tic('clean XML')
 # Clean up the XML:
 reports$XMLResponseStringClean <- str_replace(reports$XMLResponseString, '>>', '>')
 reports$XMLResponseStringClean <- str_replace(reports$XMLResponseStringClean, '&', '-and-')
 reports$XMLResponseStringClean <- str_replace(reports$XMLResponseStringClean, 'Transaction Entry Date Thru', 'TransactionEntryDateThru')
 reports$XMLResponseStringClean <- str_replace(reports$XMLResponseStringClean,'(<AgentCode>.*</AgentCode>)<ODRParameters>','<NewDataSet><ODRParameters>\\1')
+toc()
 
-
+tic('XML to Cols')
 # Parse XML values into Columns: (this might take a minute or two each)
 reports$GroupCustom <- sapply(reports$XMLResponseStringClean, function(x) 
   ifelse(x %like% '<GroupCustom>', xml_find_all(read_xml(x), './/GroupCustom') %>% xml_text(), NA))
@@ -125,7 +130,7 @@ reports$groupSF <- sapply(reports$XMLResponseStringClean, function(x)
   ifelse(x %like% '<GroupSF>', xml_find_all(read_xml(x), './/GroupSF') %>% xml_text(), NA))
 reports$Agents <- sapply(reports$XMLResponseStringClean, function(x) 
   ifelse(x %like% '<AgentCode>', xml_find_all(read_xml(x), './/AgentCode') %>% xml_text(), NA))
-
+toc()
 
 # Count commas to determine number of Agents
 reports$AgentCount <- ifelse(is.na(reports$Agents), 0, str_count(reports$Agents, ',')+1)
@@ -147,8 +152,9 @@ getCCgroups <- function(x = c()){
 }
 
 # Build CurrencyCode counts: (this will take a few minutes)
+tic("CC Function")
 reports$CurrencyCodeGroups <- sapply(reports$CurrencyCode, function(x) ifelse(is.na(x), 0, getCCgroups(x)))
-
+toc()
 
 # Merge counts:
 reports$GroupCount <- ifelse(!is.na(reports$groupFI), 1, reports$GroupCount)
@@ -156,10 +162,11 @@ reports$GroupCount <- ifelse(!is.na(reports$groupSF), 1, reports$GroupCount)
 reports$GroupCount <- ifelse(is.na(reports$GroupCount), reports$CurrencyCodeGroups, reports$GroupCount)
 reports$GroupCount <- ifelse(reports$CurrencyCodeGroups < reports$GroupCount & reports$CurrencyCodeGroups > 0, reports$CurrencyCodeGroups, reports$GroupCount)
 
+
 # Update report categories:
 
 
-
+toc()
 ```
 
 
