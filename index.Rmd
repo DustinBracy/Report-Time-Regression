@@ -118,7 +118,7 @@ reports$XMLResponseStringClean <- str_replace(reports$XMLResponseStringClean,'(<
 reports$GroupCustom <- sapply(reports$XMLResponseStringClean, function(x) 
   ifelse(x %like% '<GroupCustom>', xml_find_all(read_xml(x), './/GroupCustom') %>% xml_text(), NA))
 reports$CurrencyCode <- sapply(reports$XMLResponseStringClean, function(x) 
-  ifelse(x %like% '<CurrencyCode>', xml_find_all(read_xml(x), './/CurrencyCode') %>% xml_text(), NA))
+  ifelse(x %like% '<CurrencyCode>', xml_find_all(read_xml(x), './/CurrencyCode') %>% xml_text() %>% toupper(), NA))
 reports$groupFI <- sapply(reports$XMLResponseStringClean, function(x) 
   ifelse(x %like% '<GroupFI>', xml_find_all(read_xml(x), './/GroupFI') %>% xml_text(), NA))
 reports$groupSF <- sapply(reports$XMLResponseStringClean, function(x) 
@@ -141,7 +141,6 @@ reports$CustomGroupCount <- reports$GroupCount
 
 # Function to count groups for currency codes:
 getCCgroups <- function(x = c()){
-  x <- toupper(x)
   df <- setNames(data.frame(cCode=str_split(x,','), stringsAsFactors = F),'ccode')
   df <- inner_join(df, CurrencyCodes, by=c('ccode'='CurrencyCode'))
   return(sum(df$GroupCount, na.rm = T))
@@ -158,8 +157,6 @@ reports$GroupCount <- ifelse(is.na(reports$GroupCount), reports$CurrencyCodeGrou
 reports$GroupCount <- ifelse(reports$CurrencyCodeGroups < reports$GroupCount & reports$CurrencyCodeGroups > 0, reports$CurrencyCodeGroups, reports$GroupCount)
 
 # Update report categories:
-
-
 
 
 
