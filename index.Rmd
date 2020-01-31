@@ -17,6 +17,7 @@ library(xml2)
 library(purrr)
 library(lubridate)
 library(tictoc)
+library(kableExtra)
 
 # import report data:
 tic('total runtime')
@@ -35,7 +36,7 @@ We would like to answer the following questions about our data:
 5. What are the biggest impacts on performance of reports?
 
 ## Data Description
-We have collected a full year worth of report data spanning Jan 2019 - Jan 2020. The available parameter list is very large   A description of fields is avaiable below:
+We have collected a full year worth of report data spanning Jan 2019 - Jan 2020. The available parameter list is very large. A description of fields is avaiable below:
 
 #### Report Parameters:
 * GroupFI - Fully Insured Client
@@ -110,6 +111,14 @@ Finance Billing
 
 ```{r ETL pipeline}
 
+# Remove imported reports:
+reports <- reports %>% filter(Server != 'IMPSERVICE')
+
+# Convert to factors:
+reports$SchedFreq <- as.factor(reports$SchedFreq)
+reports$TestProdIndicator <- as.factor(reports$TestProdIndicator)
+reports$DelivMthd <- as.factor(reports$DelivMthd)
+
 tic('clean XML')
 # Clean up the XML:
 reports$XMLResponseStringClean <- str_replace(reports$XMLResponseString, '>>', '>')
@@ -163,7 +172,20 @@ reports$GroupCount <- ifelse(is.na(reports$GroupCount), reports$CurrencyCodeGrou
 reports$GroupCount <- ifelse(reports$CurrencyCodeGroups < reports$GroupCount & reports$CurrencyCodeGroups > 0, reports$CurrencyCodeGroups, reports$GroupCount)
 
 
-# Update report categories:
+# Update report categories: Adam
+
+
+
+# NAs at a glance:
+MissingValues <- sapply(reports, function(x) sum(is.na(x)))
+MissingValues %>% kable("html") %>% kable_styling()
+
+# Stash the original data before we drop stuff
+reportsOrg <- reports
+
+# Drop columns we don't need:
+dropColumns <- c('XMLResponseString','ReportGroupDescription','ReportPath','StatusDesc','NotifiedDateTime','DeletedDateTime','FormDeleted','ProcessId','FormId','QueueId','RunTimeInMinsSecs','RptCategoryId','CurrencyCodeGroups','CustomGroupCount','RptCategoryDesc')
+reports <- reports[ , !(names(reports) %in% dropColumns)]
 
 
 toc()
@@ -172,10 +194,14 @@ toc()
 
 
 ```{r EDA}
+
+# Yang
 summary(reports)
 
 unique(reports$ReportGroupDescription)
 unique(reports$RptCategoryDesc)
+
+
 ```
 
 
