@@ -2,8 +2,10 @@
 title: "Team DAY Project"
 author: "Dustin Bracy, Adam Ruthford, Yang Zhang"
 date: "1/23/2020"
-output: html_document
-editor_options: 
+output:
+  word_document: default
+  word: default
+editor_options:
   chunk_output_type: console
 ---
 
@@ -27,8 +29,8 @@ load("./data/currencyCode.RData")
 ## Introduction
 We would like to answer the following questions about our data:
 1. Can we accurately predict the runtime of our reports?
-2. What are the best times of day, week, or month to run a report?
-3. What are the worst times of day, week, or month to run a report?
+2. What is the expected average delivery time of a one off report?
+3. What are the best & worst times of day, week, or month to run a report?
 4. Is there a difference in performance between report servers?
 5. What are the biggest impacts on performance of reports?
 
@@ -63,7 +65,7 @@ We have collected a full year worth of report data spanning Jan 2019 - Jan 2020.
 * DayOfMonth - Day of the month report ran
 * DayOfWeek - Day of the week report ran
 * HourOfDay - Hour of the day report ran
-* NumberOfQueuedReports - How many reports are in the queue and/or processing when the report batch begins rendering
+* NumberOfQueuedReports - How many reports are in the queue and/or processing when the report begins rendering
 
 
 ### Report Category Crosswalk:
@@ -82,6 +84,7 @@ Professional Liability
 
 Actuarial
 "Actuarial","ISBReports","Renewal",
+**One exception: when rptCategoryDesc = 'renewal' and reportGroup = 'CommissionsTFB' use 'Commissions'**
 
 Finance Commission
 "Commissions","CRMOnlineFinance","CommCnt","CommCompare"
@@ -102,8 +105,6 @@ Finance Billing
 "Billing", "Coverage","Refunds","Credit Card Process","Deposit","CheckRecon","Check Register","FinancePremium", "Premium"
 
 
-### ReportGroup Crosswalk:
-When = 'CommissionsTFB' override 'renewal' with 'Commissions'
 
 ## Exploratory Analysis
 
