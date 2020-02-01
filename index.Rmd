@@ -7,6 +7,7 @@ output:
   word: default
 editor_options:
   chunk_output_type: console
+always_allow_html: yes
 ---
 
 ```{r setup, include=FALSE}
@@ -174,7 +175,35 @@ reports$GroupCount <- ifelse(reports$CurrencyCodeGroups < reports$GroupCount & r
 
 # Update report categories: Adam
 
-
+reports$ReportCategory <- case_when(reports$RptCategoryDesc %in% 
+                              c("Eligibility","Accumulator","EventHistory","COBRA",
+                                "RedCard","ComPsych") ~ "Eligibility",
+                            reports$RptCategoryDesc %in% 
+                              c("Miscellaneous") ~ "Miscellaneous",
+                            reports$RptCategoryDesc %in% 
+                              c("Reinsurance","Aggregate Report")~ "Reinsurance",
+                            reports$RptCategoryDesc %in% 
+                              c("PL")~ "Professional Liability",
+                            reports$RptCategoryDesc %in% c("Renewal") & 
+                              reports$ReportGroupDescription == "Commissions TFB" ~ "Finance Commission",
+                            reports$RptCategoryDesc %in% 
+                              c("Actuarial","ISBReports","Renewal")~ "Actuarial",
+                            reports$RptCategoryDesc %in% 
+                              c("Commissions","CRMOnlineFinance","CommCnt",
+                                "CommCompare")~ "Finance Commission",
+                            reports$RptCategoryDesc %in% 
+                              c("ClaimsAudit","CMSRepting","Repository","GilsbarPPO","Claims")~ "Claims",
+                            reports$RptCategoryDesc %in% 
+                              c("Wellness Repository","MedCom","TVC","MedInsight")~ "Medical Management",
+                            reports$RptCategoryDesc %in% 
+                              c("iTrac","TMS","Customer Service","ODR Admin","PortalStats",
+                                "AutoAdjudication","Genelco","Supervisor")~ "Metrics",
+                            reports$RptCategoryDesc %in% 
+                              c("DataExtracts","Large Claims Reports")~ "Extract",
+                            reports$RptCategoryDesc %in% 
+                              c("Billing", "Coverage","Refunds","Credit Card Process","Deposit"
+                                ,"CheckRecon","Check Register","FinancePremium", "Premium")~ "Finance Billing",
+                            TRUE~"OTHER")
 
 # NAs at a glance:
 MissingValues <- sapply(reports, function(x) sum(is.na(x)))
