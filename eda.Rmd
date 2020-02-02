@@ -1,0 +1,571 @@
+---
+title: "Team DAY Project"
+author: "Dustin Bracy, Adam Ruthford, Yang Zhang"
+date: "1/23/2020"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+#library(tidyverse)
+library(data.table) #for %like% function
+library(xml2)
+library(purrr)
+library(lubridate)
+library(tictoc)
+library(kableExtra)
+
+library(stringr)
+
+# import report data:
+tic('total runtime')
+load("./data/reports.RData")
+load("./data/customGroups.RData")
+load("./data/currencyCode.RData")
+
+```
+
+## Introduction
+We would like to answer the following questions about our data:
+1. Can we accurately predict the runtime of our reports?
+2. What is the expected average delivery time of a one off report?
+3. What are the best & worst times of day, week, or month to run a report?
+4. Is there a difference in performance between report servers?
+5. What are the biggest impacts on performance of reports?
+
+## Data Description
+We have collected a full year worth of report data spanning Jan 2019 - Jan 2020. The available parameter list is very large. A description of fields is avaiable below:
+
+#### Report Parameters:
+* GroupFI - Fully Insured Client
+* GroupSF - Self Funded Client
+* Agents - Specified agents
+* CurrencyCode - Collection of different lines of business
+* GroupCustom - Collection of different client types
+* SchedFreq - Scheduled Report Frequency
+
+#### Report Metrics:
+* ReportBytes - size in bytes of completed report
+* Server - Server on which the report was built
+* FormID - Uniquely identifies collection of report parameters
+* QueueID - Uniquely identifies queued reports
+* QueuedDateTime - when report entered queue
+* RenderStartDateTime - when server began work on queued report(s) in queueID batch
+* ReportStartDateTime - when server began work on individual report
+* ReportEndDateTime - when server completed work on individual report
+* RenderEndDateTime - when server completed work on queued report(s) in queueID batch
+* Priority - controlled report parameter
+
+#### Engineered Features:
+* ReportBuildTime - ReportEndDateTime less ReportStartDateTime
+* ReportDeliveryTime - RenderEndDateTime less QueuedDateTime
+* LagTime - RenderEndDateTime less ReportEndDateTime
+* QueueTime - RenderStartDateTime less QueuedDateTime
+* DayOfMonth - Day of the month report ran
+* DayOfWeek - Day of the week report ran
+* HourOfDay - Hour of the day report ran
+* NumberOfQueuedReports - How many reports are in the queue and/or processing when the report begins rendering
+
+
+### Report Category Crosswalk:
+
+Eligibility
+"Eligibility","Accumulator","EventHistory","COBRA","RedCard","ComPsych"
+
+Miscellaneous
+"Miscellaneous"
+
+Reinsurance
+"Reinsurance","Aggregate Report"
+
+Professional Liability
+"PL"
+
+Actuarial
+"Actuarial","ISBReports","Renewal",
+**One exception: when rptCategoryDesc = 'renewal' and reportGroup = 'CommissionsTFB' use 'Commissions'**
+
+Finance Commission
+"Commissions","CRMOnlineFinance","CommCnt","CommCompare"
+
+Claims
+"ClaimsAudit","CMSRepting","Repository","GilsbarPPO","Claims"
+
+Medical Management
+"Wellness Repository","MedCom","TVC","MedInsight"
+
+Metrics
+"iTrac","TMS","Customer Service","ODR Admin","PortalStats","AutoAdjudication","Genelco","Supervisor"
+
+Extract
+"DataExtracts","Large Claims Reports"
+
+Finance Billing
+"Billing", "Coverage","Refunds","Credit Card Process","Deposit","CheckRecon","Check Register","FinancePremium", "Premium"
+
+
+
+## Exploratory Analysis
+
+```{r ETL pipeline}
+
+# Remove imported reports:
+#reports <- reports %>% filter(Server != 'IMPSERVICE')
+
+# Convert to factors:
+reports$SchedFreq <- as.factor(reports$SchedFreq)
+reports$TestProdIndicator <- as.factor(reports$TestProdIndicator)
+reports$DelivMthd <- as.factor(reports$DelivMthd)
+
+tic('clean XML')
+# Clean up the XML:
+reports$XMLResponseStringClean <- str_replace(reports$XMLResponseString, '>>', '>')
+reports$XMLResponseStringClean <- str_replace(reports$XMLResponseStringClean, '&', '-and-')
+reports$XMLResponseStringClean <- str_replace(reports$XMLResponseStringClean, 'Transaction Entry Date Thru', 'TransactionEntryDateThru')
+reports$XMLResponseStringClean <- str_replace(reports$XMLResponseStringClean,'(<AgentCode>.*</AgentCode>)<ODRParameters>','<NewDataSet><ODRParameters>\\1')
+toc()
+
+tic('XML to Cols')
+# Parse XML values into Columns: (this might take a minute or two each)
+reports$GroupCustom <- sapply(reports$XMLResponseStringClean, function(x) 
+  ifelse(x %like% '<GroupCustom>', xml_find_all(read_xml(x), './/GroupCustom') %>% xml_text(), NA))
+reports$CurrencyCode <- sapply(reports$XMLResponseStringClean, function(x) 
+  ifelse(x %like% '<CurrencyCode>', xml_find_all(read_xml(x), './/CurrencyCode') %>% xml_text() %>% toupper(), NA))
+reports$groupFI <- sapply(reports$XMLResponseStringClean, function(x) 
+  ifelse(x %like% '<GroupFI>', xml_find_all(read_xml(x), './/GroupFI') %>% xml_text(), NA))
+reports$groupSF <- sapply(reports$XMLResponseStringClean, function(x) 
+  ifelse(x %like% '<GroupSF>', xml_find_all(read_xml(x), './/GroupSF') %>% xml_text(), NA))
+reports$Agents <- sapply(reports$XMLResponseStringClean, function(x) 
+  ifelse(x %like% '<AgentCode>', xml_find_all(read_xml(x), './/AgentCode') %>% xml_text(), NA))
+toc()
+
+# Count commas to determine number of Agents
+reports$AgentCount <- ifelse(is.na(reports$Agents), 0, str_count(reports$Agents, ',')+1)
+
+
+# Join GroupCount to GroupCustom:
+reports <- left_join(reports, CustomGroups, by=c('GroupCustom' = 'CustomGroupCode'))
+
+
+# Capture original GroupCount
+reports$CustomGroupCount <- reports$GroupCount
+
+
+# Function to count groups for currency codes:
+getCCgroups <- function(x = c()){
+  df <- setNames(data.frame(cCode=str_split(x,','), stringsAsFactors = F),'ccode')
+  df <- inner_join(df, CurrencyCodes, by=c('ccode'='CurrencyCode'))
+  return(sum(df$GroupCount, na.rm = T))
+}
+
+# Build CurrencyCode counts: (this will take a few minutes)
+tic("CC Function")
+reports$CurrencyCodeGroups <- sapply(reports$CurrencyCode, function(x) ifelse(is.na(x), 0, getCCgroups(x)))
+toc()
+
+# Merge counts:
+reports$GroupCount <- ifelse(!is.na(reports$groupFI), 1, reports$GroupCount)
+reports$GroupCount <- ifelse(!is.na(reports$groupSF), 1, reports$GroupCount)
+reports$GroupCount <- ifelse(is.na(reports$GroupCount), reports$CurrencyCodeGroups, reports$GroupCount)
+reports$GroupCount <- ifelse(reports$CurrencyCodeGroups < reports$GroupCount & reports$CurrencyCodeGroups > 0, reports$CurrencyCodeGroups, reports$GroupCount)
+
+
+# Update report categories: Adam
+ 
+
+reports$ReportCategory <- case_when(reports$RptCategoryDesc %in% 
+                              c("Eligibility","Accumulator","EventHistory","COBRA",
+                                "RedCard","ComPsych") ~ "Eligibility",
+                            reports$RptCategoryDesc %in% 
+                              c("Miscellaneous") ~ "Miscellaneous",
+                            reports$RptCategoryDesc %in% 
+                              c("Reinsurance","Aggregate Report")~ "Reinsurance",
+                            reports$RptCategoryDesc %in% 
+                              c("PL")~ "Professional Liability",
+                            reports$RptCategoryDesc %in% c("Renewal") & 
+                              reports$ReportGroupDescription == "Commissions TFB" ~ "Finance Commission",
+                            reports$RptCategoryDesc %in% 
+                              c("Actuarial","ISBReports","Renewal")~ "Actuarial",
+                            reports$RptCategoryDesc %in% 
+                              c("Commissions","CRMOnlineFinance","CommCnt",
+                                "CommCompare")~ "Finance Commission",
+                            reports$RptCategoryDesc %in% 
+                              c("ClaimsAudit","CMSRepting","Repository","GilsbarPPO","Claims")~ "Claims",
+                            reports$RptCategoryDesc %in% 
+                              c("Wellness Repository","MedCom","TVC","MedInsight")~ "Medical Management",
+                            reports$RptCategoryDesc %in% 
+                              c("iTrac","TMS","Customer Service","ODR Admin","PortalStats",
+                                "AutoAdjudication","Genelco","Supervisor")~ "Metrics",
+                            reports$RptCategoryDesc %in% 
+                              c("DataExtracts","Large Claims Reports")~ "Extract",
+                            reports$RptCategoryDesc %in% 
+                              c("Billing", "Coverage","Refunds","Credit Card Process","Deposit"
+                                ,"CheckRecon","Check Register","FinancePremium", "Premium")~ "Finance Billing",
+                            TRUE~"OTHER")
+
+# Engineered Features - Adam
+
+reports$ReportBuildTime <- difftime(reports$ReportEndDateTime, reports$ReportStartDateTime, units = "secs")
+reports$ReportDeliveryTime <- difftime(reports$RenderEndDateTime, reports$QueuedDateTime, units = "secs")
+reports$LagTime <- difftime(reports$RenderEndDateTime, reports$ReportEndDateTime, units = "secs")
+reports$QueueTime <-  difftime(reports$RenderStartDateTime, reports$QueuedDateTime, units = "secs")
+reports$DayOfMonth  <- format(as_datetime(reports$ReportStartDateTime),"%d")
+reports$DayOfWeek <- format(as_datetime(reports$ReportStartDateTime),"%A")
+reports$HourOfDay <- format(as_datetime(reports$ReportStartDateTime),"%H")
+# NumberOfQueuedReports - How many reports are in the queue and/or processing when the report begins rendering
+#Still Have to do this one
+
+
+
+# NAs at a glance:
+MissingValues <- sapply(reports, function(x) sum(is.na(x)))
+MissingValues %>% kable("html") %>% kable_styling()
+
+# Stash the original data before we drop stuff
+reportsOrg <- reports
+
+# Drop columns we don't need:
+dropColumns <- c('XMLResponseString','ReportGroupDescription','ReportPath','StatusDesc','NotifiedDateTime','DeletedDateTime','FormDeleted','ProcessId','FormId','QueueId','RunTimeInMinsSecs','RptCategoryId','CurrencyCodeGroups','CustomGroupCount','RptCategoryDesc')
+reports <- reports[ , !(names(reports) %in% dropColumns)]
+
+
+toc()
+```
+
+
+
+```{r EDA}
+
+# Yang EDA
+summary(reports)
+
+#unique(reports$ReportGroupDescription)
+#unique(reports$RptCategoryDesc)
+
+
+```
+
+
+```{r}
+
+library(dplyr)
+library(GGally)
+
+#data dimensions
+dim(reports)
+
+str(reports[,c(1:10,23)])
+
+# Print out a summary of the dataset
+reports %>% glimpse()
+```
+
+Observations:
+-The 4005 NA values can be moved together.
+-Other factors has large amount of missing values include Agents, GroupGustom, CurrencyCode, groupFI and groupSF.
+
+```{r}
+#Check NA values
+print(colSums(is.na(reports)))
+```
+Observations:
+-3 Servers that processed most reports are SQLODR2, SQLODR3, SQLODR6.
+-Scheule frequency amount ordered by Week, OneDay, Month.
+-Report format has bigger proportion in CSV/PDF followed by TXT/EXCEL.
+-Delivery Method with Web is majority. Test Production indicator with "P" is majority.
+-Report genereated more on WeekDays topped by Monday/Tuesday.
+-Submission time top by 6am in morning, 9am and 6pm are also peak times.
+-1st day of Month is peak report time.
+-Priorities only has 0.1,2,3,10, with 10 is majority.
+
+
+
+
+```{r}
+# Plot Category Variables in character or factor
+##By Server
+reports %>% group_by(Server) %>% summarise(Count=n()) %>% ggplot(aes(x=Server, y=Count)) + geom_bar(stat="identity", fill="orange", color="grey40") + labs(title="Server", x="Server",y="Count") + geom_text(aes(x=Server, y=0.01, label= Count), vjust=-2, size=3, colour="black", fontface="bold",angle=360)
+
+#By SchedFreq
+reports %>% group_by(SchedFreq) %>% summarise(Count=n()) %>% ggplot(aes(x=SchedFreq, y=Count)) + geom_bar(stat="identity", fill="orange", color="grey40") + labs(title="SchedFreq", x="SchedFreq",y="Count") + geom_text(aes(x=SchedFreq, y=0.01, label= Count), vjust=-2, size=3, colour="black", fontface="bold",angle=360)
+
+#By RptFrmt
+reports %>% group_by(RptFrmt) %>% summarise(Count=n()) %>% ggplot(aes(x=RptFrmt, y=Count)) + geom_bar(stat="identity", fill="orange", color="grey40") + labs(title="RptFrmt", x="StatusDesc",y="Count") + geom_text(aes(x=RptFrmt, y=0.01, label= Count), vjust=-2, size=3, colour="black", fontface="bold",angle=360)
+
+#By DelivMthd
+reports %>% group_by(DelivMthd) %>% summarise(Count=n()) %>% ggplot(aes(x=DelivMthd, y=Count)) + geom_bar(stat="identity", fill="orange", color="grey40") + labs(title="DelivMthd", x="DelivMthd",y="Count") + geom_text(aes(x=DelivMthd, y=0.01, label= Count), vjust=-2, size=3, colour="black", fontface="bold",angle=360)
+
+#By TestProdIndicator
+reports %>% group_by(TestProdIndicator) %>% summarise(Count=n()) %>% ggplot(aes(x=TestProdIndicator, y=Count)) + geom_bar(stat="identity", fill="orange", color="grey40") + labs(title="TestProdIndicator", x="TestProdIndicator",y="Count") + geom_text(aes(x=TestProdIndicator, y=0.01, label= Count), vjust=-2, size=3, colour="black", fontface="bold",angle=360)
+
+#By ReportStartDay
+reports %>% group_by(ReportStartDay) %>% summarise(Count=n()) %>% ggplot(aes(x=ReportStartDay, y=Count)) + geom_bar(stat="identity", fill="orange", color="grey40") + labs(title="ReportStartDay", x="ReportStartDay",y="Count") + geom_text(aes(x=ReportStartDay, y=0.01, label= Count), vjust=-2, size=3, colour="black", fontface="bold",angle=360)
+
+#By DayOfWeek (Duplicate?)
+#reports %>% group_by(DayOfWeek) %>% summarise(Count=n()) %>% ggplot(aes(x=DayOfWeek, y=Count)) + geom_bar(stat="identity", fill="orange", color="grey40") + labs(title="DayOfWeek", x="DayOfWeek",y="Count") + geom_text(aes(x=DayOfWeek, y=0.01, label= Count), vjust=-2, size=3, colour="black", fontface="bold",angle=360)
+
+#By HourOfDay
+reports %>% group_by(HourOfDay) %>% summarise(Count=n()) %>% ggplot(aes(x=HourOfDay, y=Count)) + geom_bar(stat="identity", fill="orange", color="grey40") + labs(title="HourOfDay", x="HourOfDay",y="Count") + geom_text(aes(x=HourOfDay, y=0.01, label= Count), vjust=-2, size=3, colour="black", fontface="bold",angle=360)
+
+#By DayOfMonth
+reports %>% group_by(DayOfMonth) %>% summarise(Count=n()) %>% ggplot(aes(x=DayOfMonth, y=Count)) + geom_bar(stat="identity", fill="orange", color="grey40") + labs(title="DayOfMonth", x="DayOfMonth",y="Count") + geom_text(aes(x=DayOfMonth, y=0.01, label= Count), vjust=-2, size=3, colour="black", fontface="bold",angle=360)
+
+#By Priority
+reports %>% group_by(Priority) %>% summarise(Count=n()) %>% ggplot(aes(x=Priority, y=Count)) + geom_bar(stat="identity", fill="orange", color="grey40") + labs(title="Priority", x="Priority",y="Count") + geom_text(aes(x=Priority, y=0.01, label= Count), vjust=-2, size=3, colour="black", fontface="bold",angle=360)
+
+#By RunTimeSEC should be numeric -- delete later
+#reports %>% group_by(RunTimeSEC) %>% summarise(Count=n()) %>% ggplot(aes(x=RunTimeSEC, y=Count)) + geom_bar(stat="identity", fill="orange", color="grey40") + labs(title="RunTimeSEC", x="RunTimeSEC",y="Count") + geom_text(aes(x=RunTimeSEC, y=0.01, label= Count), vjust=-2, size=3, colour="black", fontface="bold",angle=360)
+
+
+
+```
+Observations:
+-All numric variables (Time or Bytes) need log transformation.
+-Running time tails off with a light peak around 660 seconds
+-Report Bytes has a peak around 268000 Bytes.
+-Report build time around 0-2900 seconds.
+-Report lag time mostly below 1 sec.
+-Report queue time has a peak around 250 sec similiar with report delivery time.
+
+```{r}
+# Plot Numerical Variables
+
+##By RunTimeSEC
+reports$RunTimeSEC = as.numeric(reports$RunTimeSEC)
+ggplot(data=reports[!is.na(reports$RunTimeSEC),], aes(x=RunTimeSEC)) +
+        geom_histogram(fill="blue", binwidth = 1000) + labs(title="RunTimeSEC", x="RunTimeSEC")
+
+##By RunTimeSEC -- Take log
+reports$RunTimeSEC = as.numeric(reports$RunTimeSEC)
+ggplot(data=reports[!is.na(reports$RunTimeSEC),], aes(x=log(RunTimeSEC))) +
+        geom_histogram(fill="blue") + labs(title="RunTimeSEC", x="x=log(RunTimeSEC)")
+
+##By ReportBytes
+reports_sizel0 <- reports %>% filter(reports$ReportBytes > 0) 
+ggplot(data=reports_sizel0,aes(x=log(reports_sizel0$ReportBytes))) + geom_histogram(fill="blue") + labs(title="ReportBytes", x="log(ReportBytes)")
+
+##By ReportBuildTime
+reports$ReportBuildTime = as.numeric(reports$ReportBuildTime)
+ggplot(data=reports[!is.na(reports$ReportBuildTime),], aes(x=log(ReportBuildTime))) +
+        geom_histogram(fill="blue") + labs(title="ReportBuildTime", x="log(ReportBuildTime)")
+
+##By LagTime
+reports$LagTime = as.numeric(reports$LagTime)
+ggplot(data=reports[!is.na(reports$LagTime),], aes(x=log(LagTime))) +
+        geom_histogram(fill="blue") + labs(title="LagTime", x="log(LagTime)")
+
+##By QueueTime
+reports$QueueTime = as.numeric(reports$QueueTime)
+ggplot(data=reports[!is.na(reports$QueueTime),], aes(x=log(QueueTime))) +
+        geom_histogram(fill="blue") + labs(title="QueueTime", x="log(QueueTime)")
+
+##By ReportDeliveryTime
+reports$ReportDeliveryTime = as.numeric(reports$ReportDeliveryTime)
+ggplot(data=reports[!is.na(reports$ReportDeliveryTime),], aes(x=log(ReportDeliveryTime))) +
+        geom_histogram(fill="blue") + labs(title="ReportDeliveryTime", x="log(ReportDeliveryTime)")
+
+```
+
+Observations:
+-The following numric variables not displayed much variations by servers. Only Delivery/Queue time desplay different feature with server 6/2/3 compared with server 1/5.
+
+```{r}
+
+
+#reports %>% select(RunTimeSEC, Server) %>% group_by(RunTimeSEC, Server) %>% summarize(n=n()) %>% ggplot(aes(x=Server, y=n) + geom_density(alpha = 0.7)
+                                                                                                        
+g1 <- reports %>% ggplot(aes(x=log(RunTimeSEC), fill=Server)) + geom_density(alpha = 0.7) + labs(title="Running time colored by Server")                                                                                                       
+g2 <- reports %>% ggplot(aes(x=log(ReportBytes), fill=Server)) + geom_density(alpha = 0.7) + labs(title="Report Bytes colored by Server")  
+
+g3 <- reports %>% ggplot(aes(x=log(ReportBuildTime), fill=Server)) + geom_density(alpha = 0.7) + labs(title="Report Build time colored by Server")   
+
+g4 <- reports %>% ggplot(aes(x=log(ReportDeliveryTime), fill=Server)) + geom_density(alpha = 0.7) + labs(title="Report Delivery time colored by Server")   
+
+g5 <- reports %>% ggplot(aes(x=log(LagTime), fill=Server)) + geom_density(alpha = 0.7) + labs(title="Lag time colored by Server")   
+
+g6 <- reports %>% ggplot(aes(x=log(QueueTime), fill=Server)) + geom_density(alpha = 0.7) + labs(title="Queued time colored by Server")  
+
+grid.arrange(g1,g2,g3,g4,g5,g6,ncol = 2, nrow = 3)
+```
+
+
+Observations:
+-No obvious differences are observed with discrete variables for server 2,3 and 6.
+
+
+```{r}
+
+reports %>% select(SchedFreq, Server) %>% group_by(SchedFreq, Server) %>% summarize(n=n()) %>% ggplot(aes(x=Server, y=n, fill=SchedFreq, color=SchedFreq)) + geom_bar(stat="identity", color="grey40") + facet_wrap(~SchedFreq) + geom_label(aes(label=n, fill = SchedFreq), colour = "white", fontface = "italic") +
+    labs(title="SchedFreq by Server", x="Server",y="Amount") + geom_text(aes(x=Server, y=0.01, label= n),vjust=-2)
+
+reports %>% select(RptFrmt, Server) %>% group_by(RptFrmt, Server) %>% summarize(n=n()) %>% ggplot(aes(x=Server, y=n, fill=RptFrmt, color=RptFrmt)) + geom_bar(stat="identity", color="grey40") + facet_wrap(~RptFrmt) + geom_label(aes(label=n, fill = RptFrmt), colour = "white", fontface = "italic") +
+    labs(title="Report Format grouped by Server", x="Server",y="Amount") + geom_text(aes(x=Server, y=0.01, label= n),vjust=-2)
+
+#reports %>% select(RptFrmt, Server) %>% group_by(RptFrmt, Server) %>% summarize(n=n()) %>% ggplot(aes(x=RptFrmt, y=n, fill=Server, color=Server)) + geom_bar(stat="identity", color="grey40") + facet_wrap(~Server) + geom_label(aes(label=n, fill = Server), colour = "white", fontface = "italic") + labs(title="Server by Report Format", x="Server",y="Amount") + geom_text(aes(x=RptFrmt, y=0.01, label= n),vjust=-2)
+
+reports %>% select(DelivMthd, Server) %>% group_by(DelivMthd, Server) %>% summarize(n=n()) %>% ggplot(aes(x=Server, y=n, fill=DelivMthd, color=DelivMthd)) + geom_bar(stat="identity", color="grey40") + facet_wrap(~DelivMthd) + geom_label(aes(label=n, fill = DelivMthd), colour = "white", fontface = "italic") +
+    labs(title="Delivery Method grouped by Server", x="Server",y="Amount") + geom_text(aes(x=Server, y=0.01, label= n),vjust=-2)
+
+reports %>% select(TestProdIndicator, Server) %>% group_by(TestProdIndicator, Server) %>% summarize(n=n()) %>% ggplot(aes(x=Server, y=n, fill=TestProdIndicator, color=TestProdIndicator)) + geom_bar(stat="identity", color="grey40") + facet_wrap(~TestProdIndicator) + geom_label(aes(label=n, fill = TestProdIndicator), colour = "white", fontface = "italic") +
+    labs(title="Test Production Indicator grouped by Server", x="Server",y="Amount") + geom_text(aes(x=Server, y=0.01, label= n),vjust=-2)
+
+reports %>% select(ReportStartDay, Server) %>% group_by(ReportStartDay, Server) %>% summarize(n=n()) %>% ggplot(aes(x=Server, y=n, fill=ReportStartDay, color=ReportStartDay)) + geom_bar(stat="identity", color="grey40") + facet_wrap(~ReportStartDay) + geom_label(aes(label=n, fill = ReportStartDay), colour = "white", fontface = "italic") +
+    labs(title="Report Start Day grouped by Server", x="Server",y="Amount") + geom_text(aes(x=Server, y=0.01, label= n),vjust=-2)
+
+###
+
+reports %>% select(HourOfDay, Server) %>% group_by(HourOfDay, Server) %>% summarize(n=n()) %>% ggplot(aes(x=HourOfDay, y=n, fill=Server, color=Server)) + geom_bar(stat="identity", color="grey40") + facet_wrap(~Server) + geom_label(aes(label=n, fill = Server), colour = "white", fontface = "italic") + labs(title="Server by HourofDay", x="Server",y="Amount") + geom_text(aes(x=HourOfDay, y=0.01, label= n),vjust=-2)
+
+reports %>% select(DayOfMonth, Server) %>% group_by(DayOfMonth, Server) %>% summarize(n=n()) %>% ggplot(aes(x=DayOfMonth, y=n, fill=Server, color=Server)) + geom_bar(stat="identity", color="grey40") + facet_wrap(~Server) + geom_label(aes(label=n, fill = Server), colour = "white", fontface = "italic") + labs(title="Server by DayOfMonth", x="Server",y="Amount") + geom_text(aes(x=DayOfMonth, y=0.01, label= n),vjust=-2)
+
+#reports %>% ggplot(aes(x=log(RunTimeSEC), fill=Server)) + geom_histogram()
+```
+
+Observations:
+-RptFrmt is an important factor of differenciating running times.
+
+
+```{r}
+g7 <- reports %>% ggplot(aes(x=log(RunTimeSEC), fill=SchedFreq)) + geom_density(alpha = 0.7) + labs(title="Running time colored by SchedFreq") 
+
+g8 <- reports %>% ggplot(aes(x=log(RunTimeSEC), fill=RptFrmt)) + geom_density(alpha = 0.7) + labs(title="Running time colored by RptFrmt") 
+
+g9 <- reports %>% ggplot(aes(x=log(RunTimeSEC), fill=DelivMthd)) + geom_density(alpha = 0.7) + labs(title="Running time colored by DelivMthd") 
+
+g10 <- reports %>% ggplot(aes(x=log(RunTimeSEC), fill=TestProdIndicator)) + geom_density(alpha = 0.7) + labs(title="Running time colored by TestProdIndicator") 
+
+grid.arrange(g7,g8,g9,g10,ncol = 2, nrow = 2)
+
+
+reports %>% ggplot(aes(x=log(RunTimeSEC), fill=HourOfDay)) + geom_histogram() + labs(title="Running time by HourOfDay") + facet_wrap(~HourOfDay) 
+
+reports %>% ggplot(aes(x=log(RunTimeSEC), fill=DayOfWeek)) + geom_histogram() + labs(title="Running time by DayOfWeek") + facet_wrap(~DayOfWeek)
+
+reports %>% ggplot(aes(x=log(RunTimeSEC), fill=DayOfMonth)) + geom_histogram() + labs(title="Running time by DayOfMonth") + facet_wrap(~DayOfMonth) 
+
+reports %>% ggplot(aes(x=log(RunTimeSEC), fill=Priority)) + geom_histogram() + labs(title="Running time by Priority") + facet_wrap(~Priority) 
+
+```
+
+Observations:
+-Running time is best correlated with report building time with exceptions in smaller numbers.
+-Delivery time are all bigger than running time which is consisitent with intuition.
+-No obvious trends observed with it together with Lag/Queue Time.
+-ReportBytes are correlated with Running time by large variations. No running time/report bytes differences observed by server.
+
+
+```{r}
+reports %>% select(RunTimeSEC, ReportBuildTime) %>%
+ggplot(aes(x=log(RunTimeSEC), y=log(ReportBuildTime)))+ geom_point() + labs(title="RunTimeSEC vs  ReportBuildTime", x="log(RunTimeSEC)",y="log(ReportBuildTime)") 
+
+reports %>% select(RunTimeSEC, ReportDeliveryTime) %>%
+ggplot(aes(x=log(RunTimeSEC), y=log(ReportDeliveryTime)))+ geom_point() + labs(title="RunTimeSEC vs  ReportDeliveryTime", x="log(RunTimeSEC)",y="log(ReportDeliveryTime)") 
+
+reports %>% select(RunTimeSEC, LagTime) %>%
+ggplot(aes(x=log(RunTimeSEC), y=log(LagTime)))+ geom_point() + labs(title="RunTimeSEC vs  LagTime", x="log(RunTimeSEC)",y="log(LagTime)") 
+
+reports %>% select(RunTimeSEC, QueueTime) %>%
+ggplot(aes(x=log(RunTimeSEC), y=log(QueueTime)))+ geom_point() + labs(title="RunTimeSEC vs  QueueTime", x="log(RunTimeSEC)",y="log(QueueTime)") 
+
+reports %>% select(RunTimeSEC, ReportBytes, RptFrmt) %>%
+ggplot(aes(x=log(RunTimeSEC), y=log(ReportBytes),colour = RptFrmt ))+ geom_point() + labs(title="RunTimeSEC vs  ReportBytes colored by RptFrmt", x="log(RunTimeSEC)",y="log(ReportBytes)") + facet_wrap(~RptFrmt) 
+
+reports %>% select(RunTimeSEC, ReportBytes, Server) %>%
+ggplot(aes(x=log(RunTimeSEC), y=log(ReportBytes),colour = Server ))+ geom_point() + labs(title="RunTimeSEC vs  ReportBytes colored by Server", x="log(RunTimeSEC)",y="log(ReportBytes)") + facet_wrap(~Server)  
+
+reports %>% select(RunTimeSEC, ReportDeliveryTime, DelivMthd) %>%
+ggplot(aes(x=log(RunTimeSEC), y=log(ReportDeliveryTime), colour = DelivMthd))+ geom_point() + labs(title="RunTimeSEC vs  ReportDeliveryTime colored by DelivMthd", x="log(RunTimeSEC)",y="log(ReportDeliveryTime)") + facet_wrap(~DelivMthd)  
+
+```
+
+```{r}
+unique(reports$Agents)
+unique(reports$GroupCustom)
+unique(reports$CurrencyCode)
+
+reports %>% ggplot(aes(x=log(AgentCount))) + geom_histogram()
+
+reports %>% ggplot(aes(x=log(GroupCount))) + geom_histogram()
+
+```
+
+## Addressing Objective 1:
+	Restatement of Problem and the overall approach to solve it Required
+
+### Model Selection Required
+		Type of Selection
+			Options: LASSO, RIDGE, ELASTIC NET,
+			     Stepwise, Forward, Backward, 
+		             	     Manual / Intuition,
+			     A mix of all of the above.  	
+
+### Checking Assumptions Required
+			Residual Plots
+			Influential point analysis (Cook’s D and Leverage)
+
+		Compare Competing Models Optional (Helpful if using 2 model strategy)
+			Via:  Training and test set split or CV
+                                        Possible Metrics: (ASE, AIC, BIC, adj R2, etc)
+	
+### Parameter Interpretation
+		Interpretation  Required
+		Confidence Intervals Required
+	
+### Final conclusions from the analyses of Objective 1 Required
+
+
+
+In addition to overall conclusions, feel free to include additional insights or concerns gleaned from the analysis.  What needs to be done next or how could we do it better next time?  
+
+## Addressing Objective 2
+State what route you are going to take 2way ANOVA or Time series and summarize the goal.  Required
+
+### Main Analysis Content Required
+	This will depend on the route you take.  I’m leaving it open here to see what you do.
+
+
+
+## Addressing Objective 1:
+	Restatement of Problem and the overall approach to solve it Required
+
+### Model Selection Required
+		Type of Selection
+			Options: LASSO, RIDGE, ELASTIC NET,
+			     Stepwise, Forward, Backward, 
+		             	     Manual / Intuition,
+			     A mix of all of the above.  	
+
+### Checking Assumptions Required
+			Residual Plots
+			Influential point analysis (Cook’s D and Leverage)
+
+		Compare Competing Models Optional (Helpful if using 2 model strategy)
+			Via:  Training and test set split or CV
+                                        Possible Metrics: (ASE, AIC, BIC, adj R2, etc)
+	
+### Parameter Interpretation
+		Interpretation  Required
+		Confidence Intervals Required
+	
+### Final conclusions from the analyses of Objective 1 Required
+
+
+
+In addition to overall conclusions, feel free to include additional insights or concerns gleaned from the analysis.  What needs to be done next or how could we do it better next time?  
+
+## Addressing Objective 2
+State what route you are going to take 2way ANOVA or Time series and summarize the goal.  Required
+
+### Main Analysis Content Required
+	This will depend on the route you take.  I’m leaving it open here to see what you do.
+
+### Conclusion/Discussion Required
+		The conclusion should reprise the questions and conclusions of objective 2.
+
+### Appendix Required
+	Well commented SAS/R Code Required
+ 	Graphics and summary tables (Can be placed in the appendix or in the written report itself.)
+
+
+
+
+
