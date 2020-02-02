@@ -115,12 +115,10 @@ Finance Billing
 # Remove imported reports:
 reports <- reports %>% filter(Server != 'IMPSERVICE')
 
-# Convert to factors:
-reports$SchedFreq <- as.factor(reports$SchedFreq)
-reports$TestProdIndicator <- as.factor(reports$TestProdIndicator)
-reports$DelivMthd <- as.factor(reports$DelivMthd)
-
+# Drop report with bad data:
+reports <- reports %>% filter(!is.na(RunTimeSEC))
 tic('clean XML')
+
 # Clean up the XML:
 reports$XMLResponseStringClean <- str_replace(reports$XMLResponseString, '>>', '>')
 reports$XMLResponseStringClean <- str_replace(reports$XMLResponseStringClean, '&', '-and-')
@@ -228,9 +226,21 @@ MissingValues %>% kable("html") %>% kable_styling()
 reportsOrg <- reports
 
 # Drop columns we don't need:
-dropColumns <- c('XMLResponseString','ReportGroupDescription','ReportPath','StatusDesc','NotifiedDateTime','DeletedDateTime','FormDeleted','ProcessId','FormId','QueueId','RunTimeInMinsSecs','RptCategoryId','CurrencyCodeGroups','CustomGroupCount','RptCategoryDesc')
+dropColumns <- c('XMLResponseString','ReportGroupDescription','ReportPath','StatusDesc','NotifiedDateTime','DeletedDateTime','FormDeleted','ProcessId','FormId','QueueId','RunTimeInMinsSecs','RptCategoryId','CurrencyCodeGroups','CustomGroupCount','RptCategoryDesc', 'RuntimeSec', 'NearestStartHour','XMLResponseStringClean','RunTimeSEC')
 reports <- reports[ , !(names(reports) %in% dropColumns)]
 
+# Convert to factors:
+reports$SchedFreq <- as.factor(reports$SchedFreq)
+reports$TestProdIndicator <- as.factor(reports$TestProdIndicator)
+reports$DelivMthd <- as.factor(reports$DelivMthd)
+reports$DayOfMonth <- as.factor(reports$DayOfMonth)
+reports$DayOfWeek <- as.factor(reports$DayOfWeek)
+reports$NearestStartHour <- as.factor(reports$NearestStartHour)
+reports$ReportCategory <- as.factor(reports$ReportCategory)
+reports$RptFrmt <- as.factor(reports$RptFrmt)
+reports$Priority <- as.factor(reports$Priority)
+reports$HourOfDay <- as.factor(reports$HourOfDay)
+reports$Server <- as.factor(reports$Server)
 
 toc()
 ```
@@ -241,9 +251,6 @@ toc()
 
 # Yang
 summary(reports)
-
-unique(reports$ReportGroupDescription)
-unique(reports$RptCategoryDesc)
 
 
 ```
