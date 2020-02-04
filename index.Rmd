@@ -3,7 +3,8 @@ title: "Team DAY Project"
 author: "Dustin Bracy, Adam Ruthford, Yang Zhang"
 date: "1/23/2020"
 output:
-  word_document: default
+  word_document: 
+      reference_docx: "wordStyleRef.docx"
   word: default
 editor_options:
   chunk_output_type: console
@@ -21,15 +22,19 @@ library(tictoc)
 library(kableExtra)
 
 # import report data:
-tic('total runtime')
 load("./data/reports.RData")
-load("./data/customGroups.RData")
-load("./data/currencyCode.RData")
+
+# wordStyleRef style changes:
+## Set margins to .5"
+## Remove space before and after title (reverted)
+## Remove space after date (reverted)
+
 
 ```
 
-## Introduction
+# Introduction
 We would like to answer the following questions about our data:
+
 1. Can we accurately predict the runtime of our reports?
 2. What is the expected average delivery time of a one off report?
 3. What are the best & worst times of day, week, or month to run a report?
@@ -37,80 +42,98 @@ We would like to answer the following questions about our data:
 5. What are the biggest impacts on performance of reports?
 
 ## Data Description
-We have collected a full year worth of report data spanning Jan 2019 - Jan 2020. The available parameter list is very large. A description of fields is avaiable below:
+We have collected report data spanning January 2019 through January 2020. The available parameter list is very large, having over 500 parameters used.  In order to narrow the scope of our project, we focused on completed reports only, and determined the parameters show below would be most useful in predicting report run time. A description of utilized fields is avaiable below:
 
-#### Report Parameters:
-* GroupFI - Fully Insured Client
-* GroupSF - Self Funded Client
-* Agents - Specified agents
-* CurrencyCode - Collection of different lines of business
-* GroupCustom - Collection of different client types
-* SchedFreq - Scheduled Report Frequency
-
-#### Report Metrics:
-* ReportBytes - size in bytes of completed report
-* Server - Server on which the report was built
-* FormID - Uniquely identifies collection of report parameters
-* QueueID - Uniquely identifies queued reports
+## Report Metrics
+* Priority - controlled report parameter
 * QueuedDateTime - when report entered queue
 * RenderStartDateTime - when server began work on queued report(s) in queueID batch
 * ReportStartDateTime - when server began work on individual report
 * ReportEndDateTime - when server completed work on individual report
 * RenderEndDateTime - when server completed work on queued report(s) in queueID batch
-* Priority - controlled report parameter
+* ReportBytes - size in bytes of completed report
+* RptFormat - format of the report delivered
+* SchedFreq - Scheduled Report Frequency
+* Server - Server on which the report was built
 
-#### Engineered Features:
-* ReportBuildTime - ReportEndDateTime less ReportStartDateTime
-* ReportDeliveryTime - RenderEndDateTime less QueuedDateTime
-* LagTime - RenderEndDateTime less ReportEndDateTime
-* QueueTime - RenderStartDateTime less QueuedDateTime
+## Engineered Features (all time is in seconds)
+* AgentCount - number of agents selected
 * DayOfMonth - Day of the month report ran
 * DayOfWeek - Day of the week report ran
+* GroupCount - number of clients selected
 * HourOfDay - Hour of the day report ran
-* NumberOfQueuedReports - How many reports are in the queue and/or processing when the report begins rendering
+* LagTime - Time report waited for batch to finish (RenderEndDateTime less ReportEndDateTime)
+* QueueTime - Time report entered queue (RenderStartDateTime less QueuedDateTime)
+* ReportBuildTime - Time spent to build the report (ReportEndDateTime less ReportStartDateTime)
+* ReportDeliveryTime - Time user spent waiting for report (RenderEndDateTime less QueuedDateTime)
+
+# Exploratory Data Analysis
+
+```{r EDA}
+
+# Yang
+summary(reports)
 
 
-### Report Category Crosswalk:
+```
 
-Eligibility
-"Eligibility","Accumulator","EventHistory","COBRA","RedCard","ComPsych"
+# Appendix
 
-Miscellaneous
-"Miscellaneous"
+## Additional Report Field Descriptions
+* Agents - Individual AgentIDs
+* CurrencyCode - Collection of different lines of business
+* GroupCustom - Collection of different client types
+* GroupFI - Fully Insured Client
+* GroupSF - Self Funded Client
+* ReportID - Uniquely identifies a report
+* QueueID - Uniquely identifies a queue of one or more reports
+* FormID - Uniquely identifies collection of report  parameters
 
-Reinsurance
-"Reinsurance","Aggregate Report"
+## Report Category Crosswalk:
 
-Professional Liability
-"PL"
+**Eligibility**
+"Eligibility","Accumulator","EventHistory","COBRA","RedCard","ComPsych"  
 
-Actuarial
-"Actuarial","ISBReports","Renewal",
-**One exception: when rptCategoryDesc = 'renewal' and reportGroup = 'CommissionsTFB' use 'Commissions'**
+**Miscellaneous**
+"Miscellaneous" 
 
-Finance Commission
+**Reinsurance**
+"Reinsurance","Aggregate Report" 
+
+**Professional Liability**
+"PL" 
+
+**Actuarial**
+"Actuarial","ISBReports","Renewal", *except when rptCategoryDesc = 'Renewal' and reportGroup = 'CommissionsTFB' use 'Commissions'*
+
+**Finance Commission**
 "Commissions","CRMOnlineFinance","CommCnt","CommCompare"
 
-Claims
+**Claims**
 "ClaimsAudit","CMSRepting","Repository","GilsbarPPO","Claims"
 
-Medical Management
+**Medical Management**
 "Wellness Repository","MedCom","TVC","MedInsight"
 
-Metrics
+**Metrics**
 "iTrac","TMS","Customer Service","ODR Admin","PortalStats","AutoAdjudication","Genelco","Supervisor"
 
-Extract
+**Extract**
 "DataExtracts","Large Claims Reports"
 
-Finance Billing
+**Finance Billing**
 "Billing", "Coverage","Refunds","Credit Card Process","Deposit","CheckRecon","Check Register","FinancePremium", "Premium"
 
+## ETL of original data
 
+```{r Appendix.ETL pipeline, eval=FALSE}
 
-## Exploratory Analysis
+tic('total runtime')
 
-```{r ETL pipeline, eval=FALSE}
+# Note I have relabeled this originalReports
+load("./data/originalReports.RData")
+load("./data/customGroups.RData")
+load("./data/currencyCode.RData")
 
 # Remove imported reports:
 reports <- reports %>% filter(Server != 'IMPSERVICE')
@@ -213,16 +236,13 @@ reports$QueueTime <-  difftime(reports$RenderStartDateTime, reports$QueuedDateTi
 reports$DayOfMonth  <- format(as_datetime(reports$ReportStartDateTime),"%d")
 reports$DayOfWeek <- format(as_datetime(reports$ReportStartDateTime),"%A")
 reports$HourOfDay <- format(as_datetime(reports$ReportStartDateTime),"%H")
-# NumberOfQueuedReports - How many reports are in the queue and/or processing when the report begins rendering
-#Still Have to do this one
-
 
 
 # NAs at a glance:
 MissingValues <- sapply(reports, function(x) sum(is.na(x)))
 MissingValues %>% kable("html") %>% kable_styling()
 
-# Stash the original data before we drop stuff
+# Stash the original data before we drop columns
 reportsOrg <- reports
 
 # Drop columns we don't need:
@@ -242,6 +262,7 @@ reports$Priority <- as.factor(reports$Priority)
 reports$HourOfDay <- as.factor(reports$HourOfDay)
 reports$Server <- as.factor(reports$Server)
 
+# Save data for analysis:
 save(reports, file="./data/reports.RData")
 
 toc()
@@ -249,13 +270,7 @@ toc()
 
 
 
-```{r EDA}
 
-# Yang
-summary(reports)
-
-
-```
 
 
 ## Addressing Objective 1:
