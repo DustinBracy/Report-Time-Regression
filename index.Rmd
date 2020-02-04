@@ -110,7 +110,7 @@ Finance Billing
 
 ## Exploratory Analysis
 
-```{r ETL pipeline}
+```{r ETL pipeline, eval=FALSE}
 
 # Remove imported reports:
 reports <- reports %>% filter(Server != 'IMPSERVICE')
@@ -241,6 +241,8 @@ reports$RptFrmt <- as.factor(reports$RptFrmt)
 reports$Priority <- as.factor(reports$Priority)
 reports$HourOfDay <- as.factor(reports$HourOfDay)
 reports$Server <- as.factor(reports$Server)
+
+save(reports, file="./data/reports.RData")
 
 toc()
 ```
