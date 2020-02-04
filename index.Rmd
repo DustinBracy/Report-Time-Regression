@@ -26,11 +26,13 @@ load("./data/reports.RData")
 
 # wordStyleRef style changes:
 ## Set margins to .5"
-## Remove space before and after title (reverted)
-## Remove space after date (reverted)
-
+## Heading 1 creates page break before line
+## Heading 5 centers text (#####) 
 
 ```
+
+##### ![name](./img/reportLogo.jpg)
+
 
 # Introduction
 We would like to answer the following questions about our data:
