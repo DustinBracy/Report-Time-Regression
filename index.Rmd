@@ -72,21 +72,30 @@ e.delivery <- reports %>% group_by(DelivMthd) %>% summarise(Count=n()) %>% ggplo
 e.priority <- reports %>% group_by(Priority) %>% summarise(Count=n()) %>% ggplot(aes(x=Priority, y=Count)) + geom_bar(stat="identity", fill="orange", color="grey40") + labs(title="Reports by Priority", x="Priority",y="Count") + geom_text(aes(x=Priority, y=0.01, label= Count), vjust=-2, size=3, colour="black", fontface="bold",angle=360)
 
 #By DayOfWeek
-e.weekday <- reports %>% group_by(DayOfWeek) %>% summarise(Count=n()) %>% ggplot(aes(x=DayOfWeek, y=Count)) + geom_bar(stat="identity", fill="orange", color="grey40") + labs(title="DayOfWeek", x="DayOfWeek",y="Count") + geom_text(aes(x=DayOfWeek, y=0.01, label= Count), vjust=-2, size=3, colour="black", fontface="bold",angle=360) 
+e.weekday <- reports %>% group_by(DayOfWeek) %>% summarise(Count=n()) %>% ggplot(aes(x=DayOfWeek, y=Count)) + geom_bar(stat="identity", fill="orange", color="grey40") + labs(title="Reports by Day Of Week", x="DayOfWeek",y="Count") + geom_text(aes(x=DayOfWeek, y=0.01, label= Count), vjust=-2, size=3, colour="black", fontface="bold",angle=360) 
 
 #By HourOfDay
-e.hour <- reports %>% group_by(HourOfDay) %>% summarise(Count=n()) %>% ggplot(aes(x=HourOfDay, y=Count)) + geom_bar(stat="identity", fill="orange", color="grey40") + labs(title="HourOfDay", x="HourOfDay",y="Count") + geom_text(aes(x=HourOfDay, y=0.01, label= Count), vjust=-2, size=3, colour="black", fontface="bold",angle=360) 
+e.hour <- reports %>% group_by(HourOfDay) %>% summarise(Count=n()) %>% ggplot(aes(x=fct_rev(HourOfDay), y=Count)) + geom_bar(stat="identity", fill="orange", color="grey40") + labs(title="Reports by Hour Of Day", x="HourOfDay",y="Count") + geom_text(aes(x=HourOfDay, y=0.01, label= Count), vjust=0.5, hjust=-.25, size=3, colour="black", fontface="bold",angle=360) + coord_flip()
 
 #By DayOfMonth
-e.month <- reports %>% group_by(DayOfMonth) %>% summarise(Count=n()) %>% ggplot(aes(x=DayOfMonth, y=Count)) + geom_bar(stat="identity", fill="orange", color="grey40") + labs(title="DayOfMonth", x="DayOfMonth",y="Count") + geom_text(aes(x=DayOfMonth, y=0.01, label= Count), vjust=-2, size=3, colour="black", fontface="bold",angle=360) 
+e.month <- reports %>% group_by(DayOfMonth) %>% summarise(Count=n()) %>% ggplot(aes(x=fct_rev(DayOfMonth), y=Count)) + geom_bar(stat="identity", fill="orange", color="grey40") + labs(title="Reports by Day Of Month", x="DayOfMonth",y="Count") + geom_text(aes(x=DayOfMonth, y=0.01, label= Count), vjust=0.5, hjust=-.25, size=3, colour="black", fontface="bold",angle=360) + coord_flip()
+
+#By ReportCategory
+e.category <- reports %>% group_by(ReportCategory) %>% summarise(Count=n()) %>% ggplot(aes(x=fct_rev(ReportCategory), y=Count)) + geom_bar(stat="identity", fill="orange", color="grey40") + labs(title="Reports By Category", x="ReportCategory",y="Count") + geom_text(aes(x=ReportCategory, y=0.01, label= Count), vjust=0.5, hjust=-.25, size=3, colour="black", fontface="bold",angle=360) + coord_flip()
 
 grid.arrange(e.freq, e.priority, e.format, e.delivery,  ncol=2, nrow=2)
 grid.arrange(e.server,e.weekday,  ncol=1, nrow=2)
-grid.arrange(e.hour,e.month,  ncol=1, nrow=2)
+e.category
 
 
 
 ```
+
+
+```{r fig.width=7.25, fig.height=7.25}
+grid.arrange(e.hour,e.month,  ncol=2, nrow=1)
+```
+
 
 # Appendix: Features
 
