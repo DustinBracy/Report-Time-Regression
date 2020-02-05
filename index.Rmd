@@ -20,6 +20,7 @@ library(purrr)
 library(lubridate)
 library(tictoc)
 library(kableExtra)
+library(gridExtra)
 
 # import report data:
 load("./data/reports.RData")
@@ -27,6 +28,7 @@ load("./data/reports.RData")
 # wordStyleRef style changes:
 ## Set margins to .5"
 ## Heading 1 creates page break before line
+## Heading 2 remove space before
 ## Heading 5 centers text (#####) 
 
 ```
@@ -45,98 +47,102 @@ Gilsbar offers a comprehensive reporting suite to both its internal employees an
 ## Data Description
 Gilsbar has provided report data spanning a 12 month period from January 2019 through January 2020. The available parameter list is very large, having over 500 parameters used in the past year.  In order to narrow the scope of the project, we focused on completed reports only, and determined the parameters show below would be most useful in predicting report run time. A description of other, non-utilized fields is avaiable below in the appendix. Also listed there is a crosswalk provided which groups like-type reports into 11 categories. 
 
-
-
+## Approach Methodology
+We'd like to tackle these questions using two separate models for interpretation.  First, we use Multiple Linear Regression techniques to predict runtime using several of the report metrics and features.  Second, we will utilize two-way ANOVA techniques to compare ReportDeliveryTime vs Server, Report Category, and Report Format.
 
 # Exploratory Data Analysis
+Report Plots:
 
-```{r EDA}
+```{r EDA, fig.width=7.25, fig.height=4.5, echo=TRUE}
+# Plot Categorical Variables in character or factor
 
-# Yang
-summary(reports)
+# By Server
+e.server <- reports %>% group_by(Server) %>% summarise(Count=n()) %>% ggplot(aes(x=Server, y=Count)) + geom_bar(stat="identity", fill="orange", color="grey40") + labs(title="Reports by Server", x="Server",y="Count") + geom_text(aes(x=Server, y=0.01, label= Count), vjust=-2, size=3, colour="black", fontface="bold",angle=360)
+
+#By SchedFreq
+e.freq <- reports %>% group_by(SchedFreq) %>% summarise(Count=n()) %>% ggplot(aes(x=SchedFreq, y=Count)) + geom_bar(stat="identity", fill="orange", color="grey40") + labs(title="Reports by Schedule Frequency", x="Schedule Frequency",y="Count") + geom_text(aes(x=SchedFreq, y=0.01, label= Count), vjust=-2, size=3, colour="black", fontface="bold",angle=360)
+
+#By RptFrmt
+e.format <- reports %>% group_by(RptFrmt) %>% summarise(Count=n()) %>% ggplot(aes(x=RptFrmt, y=Count)) + geom_bar(stat="identity", fill="orange", color="grey40") + labs(title="Reports by Report Format", x="Report Format",y="Count") + geom_text(aes(x=RptFrmt, y=0.01, label= Count), vjust=-2, size=3, colour="black", fontface="bold",angle=360)
+
+#By DelivMthd
+e.delivery <- reports %>% group_by(DelivMthd) %>% summarise(Count=n()) %>% ggplot(aes(x=DelivMthd, y=Count)) + geom_bar(stat="identity", fill="orange", color="grey40") + labs(title="Reports by Delivery Method", x="Delivery Method",y="Count") + geom_text(aes(x=DelivMthd, y=0.01, label= Count), vjust=-2, size=3, colour="black", fontface="bold",angle=360)
+
+#By Priority
+e.priority <- reports %>% group_by(Priority) %>% summarise(Count=n()) %>% ggplot(aes(x=Priority, y=Count)) + geom_bar(stat="identity", fill="orange", color="grey40") + labs(title="Reports by Priority", x="Priority",y="Count") + geom_text(aes(x=Priority, y=0.01, label= Count), vjust=-2, size=3, colour="black", fontface="bold",angle=360)
+
+#By DayOfWeek
+e.weekday <- reports %>% group_by(DayOfWeek) %>% summarise(Count=n()) %>% ggplot(aes(x=DayOfWeek, y=Count)) + geom_bar(stat="identity", fill="orange", color="grey40") + labs(title="DayOfWeek", x="DayOfWeek",y="Count") + geom_text(aes(x=DayOfWeek, y=0.01, label= Count), vjust=-2, size=3, colour="black", fontface="bold",angle=360) 
+
+#By HourOfDay
+e.hour <- reports %>% group_by(HourOfDay) %>% summarise(Count=n()) %>% ggplot(aes(x=HourOfDay, y=Count)) + geom_bar(stat="identity", fill="orange", color="grey40") + labs(title="HourOfDay", x="HourOfDay",y="Count") + geom_text(aes(x=HourOfDay, y=0.01, label= Count), vjust=-2, size=3, colour="black", fontface="bold",angle=360) 
+
+#By DayOfMonth
+e.month <- reports %>% group_by(DayOfMonth) %>% summarise(Count=n()) %>% ggplot(aes(x=DayOfMonth, y=Count)) + geom_bar(stat="identity", fill="orange", color="grey40") + labs(title="DayOfMonth", x="DayOfMonth",y="Count") + geom_text(aes(x=DayOfMonth, y=0.01, label= Count), vjust=-2, size=3, colour="black", fontface="bold",angle=360) 
+
+grid.arrange(e.freq, e.priority, e.format, e.delivery,  ncol=2, nrow=2)
+grid.arrange(e.server,e.weekday,  ncol=1, nrow=2)
+grid.arrange(e.hour,e.month,  ncol=1, nrow=2)
+
 
 
 ```
 
-# Appendix
+# Appendix: Features
 
-## Description of fields: 
-
-| Report Parameter | Description |
-| --- | --- |
-| Agents | Individual AgentIDs |
-| CurrencyCode | Collection of different lines of business|
-| GroupCustom | Collection of different client types|
-| GroupFI | Fully Insured Client|
-| GroupSF | Self Funded Client|
-| ReportID | Uniquely identifies a report|
-| QueueID | Uniquely identifies a queue of one or more reports|
-| FormID | Uniquely identifies collection of report parameters |
+## Report Parameters
+* Agents - Individual AgentIDs 
+* CurrencyCode - Collection of different lines of business
+* GroupCustom - Collection of different client types
+* GroupFI - Fully Insured Client
+* GroupSF - Self Funded Client
+* ReportID - Uniquely identifies a report
+* QueueID - Uniquely identifies a queue of one or more reports
+* FormID - Uniquely identifies collection of report parameters 
 
 
-| Report Metric | Description |
-| --- | --- |
-| Priority | Controlled report parameter|
-| QueuedDateTime | When report entered queue|
-| RenderStartDateTime | When server began work on queued report(s) in queueID batch|
-| ReportStartDateTime | When server began work on individual report|
-| ReportEndDateTime | When server completed work on individual report|
-| RenderEndDateTime | When server completed work on queued report(s) in queueID batch|
-| ReportBytes | Size in bytes of completed report|
-| RptFormat | Format of the report delivered|
-| SchedFreq | Scheduled Report Frequency|
-| Server | Server on which the report was built|
+## Report Metrics
+* Priority - Controlled report parameter
+* QueuedDateTime - When report entered queue
+* RenderStartDateTime - When server began work on queued report(s) in queueID batch
+* ReportStartDateTime - When server began work on individual report
+* ReportEndDateTime - When server completed work on individual report
+* RenderEndDateTime - When server completed work on queued report(s) in queueID batch
+* ReportBytes - Size in bytes of completed report
+* RptFormat - Format of the report delivered
+* SchedFreq - Scheduled Report Frequency
+* Server - Server on which the report was built
 
 
-| Engineered Feature | Description |
-| --- | --- |
-| AgentCount | Number of agents selected|
-| DayOfMonth | Day of the month report ran|
-| DayOfWeek | Day of the week report ran|
-| GroupCount | Number of clients selected|
-| HourOfDay | Hour of the day report ran|
-| LagTime | Time report waited for batch to finish (RenderEndDateTime less ReportEndDateTime)|
-| QueueTime | Time report entered queue (RenderStartDateTime less QueuedDateTime)|
-| ReportBuildTime | Time spent to build the report (ReportEndDateTime less ReportStartDateTime)|
-| ReportDeliveryTime | Time user spent waiting for report (RenderEndDateTime less QueuedDateTime)|
+## Engineered Features
+* AgentCount - Number of agents selected
+* DayOfMonth - Day of the month report ran
+* DayOfWeek - Day of the week report ran
+* GroupCount - Number of clients selected
+* HourOfDay - Hour of the day report ran
+* LagTime - Time report waited for batch to finish (RenderEndDateTime less ReportEndDateTime)
+* QueueTime - Time report entered queue (RenderStartDateTime less QueuedDateTime)
+* ReportBuildTime - Time spent to build the report (ReportEndDateTime less ReportStartDateTime)
+* ReportDeliveryTime - Time user spent waiting for report (RenderEndDateTime less QueuedDateTime)
 
 
-
+# Appendix: Report Categories
 ## Report Category crosswalk: 
+|Category|Groups|
+|---|---|
+|Eligibility|"Eligibility","Accumulator","EventHistory","COBRA","RedCard","ComPsych"|  
+|Miscellaneous|"Miscellaneous"|
+|Reinsurance|"Reinsurance","Aggregate Report"|
+|Professional Liability|"PL"|
+|Actuarial|"Actuarial","ISBReports","Renewal", *except when rptCategoryDesc = 'Renewal' and reportGroup = 'CommissionsTFB' use 'Commissions'*|
+|Finance Commission|"Commissions","CRMOnlineFinance","CommCnt","CommCompare"|
+|Claims|"ClaimsAudit","CMSRepting","Repository","GilsbarPPO","Claims"|
+|Medical Management|"Wellness Repository","MedCom","TVC","MedInsight"|
+|Metrics|"iTrac","TMS","Customer Service","ODR Admin","PortalStats","AutoAdjudication","Genelco","Supervisor"|
+|Extract|"DataExtracts","Large Claims Reports"|
+|Finance Billing|"Billing", "Coverage","Refunds","Credit Card Process","Deposit","CheckRecon","Check Register","FinancePremium", "Premium"|
 
-**Eligibility**
-"Eligibility","Accumulator","EventHistory","COBRA","RedCard","ComPsych"  
-
-**Miscellaneous**
-"Miscellaneous" 
-
-**Reinsurance**
-"Reinsurance","Aggregate Report" 
-
-**Professional Liability**
-"PL" 
-
-**Actuarial**
-"Actuarial","ISBReports","Renewal", *except when rptCategoryDesc = 'Renewal' and reportGroup = 'CommissionsTFB' use 'Commissions'*
-
-**Finance Commission**
-"Commissions","CRMOnlineFinance","CommCnt","CommCompare"
-
-**Claims**
-"ClaimsAudit","CMSRepting","Repository","GilsbarPPO","Claims"
-
-**Medical Management**
-"Wellness Repository","MedCom","TVC","MedInsight"
-
-**Metrics**
-"iTrac","TMS","Customer Service","ODR Admin","PortalStats","AutoAdjudication","Genelco","Supervisor"
-
-**Extract**
-"DataExtracts","Large Claims Reports"
-
-**Finance Billing**
-"Billing", "Coverage","Refunds","Credit Card Process","Deposit","CheckRecon","Check Register","FinancePremium", "Premium"
-
+# Appendix: Data Preparation
 ## ETL of original data
 
 ```{r Appendix.ETL pipeline, eval=FALSE}
