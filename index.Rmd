@@ -259,10 +259,10 @@ reports$ReportCategory <- case_when(reports$RptCategoryDesc %in%
 
 # Engineered Features - Adam
 
-reports$ReportBuildTime <- difftime(reports$ReportEndDateTime, reports$ReportStartDateTime, units = "secs")
-reports$ReportDeliveryTime <- difftime(reports$RenderEndDateTime, reports$QueuedDateTime, units = "secs")
-reports$LagTime <- difftime(reports$RenderEndDateTime, reports$ReportEndDateTime, units = "secs")
-reports$QueueTime <-  difftime(reports$RenderStartDateTime, reports$QueuedDateTime, units = "secs")
+reports$ReportBuildTime <- as.numeric(difftime(reports$ReportEndDateTime, reports$ReportStartDateTime, units = "secs"))
+reports$ReportDeliveryTime <- as.numeric(difftime(reports$RenderEndDateTime, reports$QueuedDateTime, units = "secs"))
+reports$LagTime <- as.numeric(difftime(reports$RenderEndDateTime, reports$ReportEndDateTime, units = "secs"))
+reports$QueueTime <-  as.numeric(difftime(reports$RenderStartDateTime, reports$QueuedDateTime, units = "secs"))
 reports$DayOfMonth  <- format(as_datetime(reports$ReportStartDateTime),"%d")
 reports$DayOfWeek <- format(as_datetime(reports$ReportStartDateTime),"%A")
 reports$HourOfDay <- format(as_datetime(reports$ReportStartDateTime),"%H")
