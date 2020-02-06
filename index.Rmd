@@ -37,7 +37,7 @@ load("./data/reports.RData")
 
 
 # Introduction
-Gilsbar offers a comprehensive reporting suite to both its internal employees and external clients.  As our user base has grown over the last several years, we have seen an increased demand for reports and consequent load on report servers.  Report run times vary significantly, sometimes reports are returned in minutes, and in the worst case: hours.  In order to mitigate server load and improve report response time, we would like to better understand factors affecting delivery time, as well as to be able to provide our users an estimated delivery time of reports.  We would like to answer the following questions about our data:
+Gilsbar offers a comprehensive reporting package to both its internal employees and external clients.  As our user base has grown over the last several years, we have seen an increased demand for reports and consequent load on report servers.  Report run times vary significantly, sometimes reports are returned in minutes, and in the worst case: hours.  In order to mitigate server load and improve report response time, we would like to better understand factors affecting delivery time, as well as to be able to provide our users an estimated delivery time of reports.  We would like to answer the following questions about our data:
 
 1. What is the expected average delivery time of a new report?
 2. What are the best & worst times of day, week, or month to run a report?
@@ -51,7 +51,9 @@ Gilsbar has provided report data spanning a 12 month period from January 2019 th
 We'd like to tackle these questions using two separate models for interpretation.  First, we use Multiple Linear Regression techniques to predict runtime using several of the report metrics and features.  Second, we will utilize two-way ANOVA techniques to compare ReportDeliveryTime vs Server, Report Category, and Report Format.
 
 # Exploratory Data Analysis
-Report Plots:
+
+
+# Appendix: EDA Plots:
 
 ```{r EDA, fig.width=7.25, fig.height=4.5, echo=TRUE}
 # Plot Categorical Variables in character or factor
@@ -223,7 +225,7 @@ reports$GroupCount <- ifelse(reports$CurrencyCodeGroups < reports$GroupCount & r
 
 
 # Update report categories: Adam
- 
+
 
 reports$ReportCategory <- case_when(reports$RptCategoryDesc %in% 
                               c("Eligibility","Accumulator","EventHistory","COBRA",
