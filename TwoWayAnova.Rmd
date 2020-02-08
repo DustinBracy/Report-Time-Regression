@@ -1,0 +1,150 @@
+---
+title: "Team DAY Project"
+author: "Dustin Bracy, Adam Ruthford, Yang Zhang"
+date: "1/23/2020"
+---
+
+```{r LoadDataLibraries}    
+library(tidyverse)
+library(data.table) #for %like% function
+library(xml2)
+library(purrr)
+library(lubridate)
+library(tictoc)
+library(kableExtra)
+library(car)
+
+tic('total runtime')
+load("./data/reports.RData")
+load("./data/customGroups.RData")
+load("./data/currencyCode.RData")
+
+```
+
+### Notes on Binning HourOfDay and Filtering by server
+The HourOfDay variable is going to be binned so that we can examine the time of day as a categorical variable. This is in an effort to determine the best time of the day to run one of or schedule new reports. Servers 1 and 5 are test and development servers. Thus they do not impact the run times for production data.
+
+```{r FilterAndBin}
+reports$HourBinned <- case_when(reports$HourOfDay %in% c("06","07") ~ "0607",
+                                    reports$HourOfDay %in% c("08","09") ~ "0809",
+                                    reports$HourOfDay %in% c("10","11")~ "1011",
+                                    reports$HourOfDay %in% c("12","13")~ "1213",
+                                    reports$HourOfDay %in% c("14","15")~ "1415",
+                                    reports$HourOfDay %in% c("16","17")~ "1617",
+                                    reports$HourOfDay %in% c("18","19","20","21","22","23")~ "1823",
+                                    reports$HourOfDay %in% c("00","01","02","03","04","05")~ "0005",
+                                    TRUE~"OTHER")
+
+reportsfilter <- reports %>% filter(!Server == "SQLODR1" & !Server == "SQLODR5")
+
+```
+
+## Two way Anova
+### Unlogged response variable Summary Stats and ANOVA table
+
+
+```{r UnloggedResponseSummary}
+model.fit.HrBnSrv <- aov(ReportDeliveryTime~Server+HourBinned+RptFrmt:Server, data = reportsfilter)
+Anova(model.fit.HrBnSrv,type=3,singular.ok=TRUE)
+
+mysummary<-function(x){
+  result<-c(length(x),mean(x),sd(x),sd(x)/length(x))
+  names(result)<-c("N","Mean","SD","SE")
+  return(result)
+}
+sumstats<-aggregate(ReportDeliveryTime~HourBinned:Server,data=reportsfilter,mysummary)
+sumstats<-cbind(sumstats[,1:2],sumstats[,-(1:2)])
+sumstats
+
+```
+
+### Discussion
+ANOVA table does show that interaction as well as explanatory variables are significant. The summary statistics include big differences in standard deviation.
+
+### Unlogged response variable Residual plots
+
+```{r UnloggedResponseResidual}
+myfits<-data.frame(fitted.values=model.fit.HrBnSrv$fitted.values,residuals=model.fit.HrBnSrv$residuals)
+
+#Residual vs Fitted
+
+plot1<-ggplot(myfits,aes(x=fitted.values,y=residuals))+ylab("Residuals")+
+  xlab("Predicted")+geom_point()+ggtitle("Log ReportDeliveryTime Residuals")
+
+#QQ plot of residuals  #Note the diagonal abline is only good for qqplots of normal data.
+plot2<-ggplot(myfits,aes(sample=residuals))+
+  stat_qq()+geom_abline(intercept=mean(myfits$residuals), slope = sd(myfits$residuals))+
+  ggtitle("Log ReportDeliveryTime Q-Q plot")
+
+#Histogram of residuals
+plot3<-ggplot(myfits, aes(x=residuals)) + 
+  geom_histogram(aes(y=..density..),binwidth=1,color="black", fill="gray")+
+  geom_density(alpha=.1, fill="red")+
+  ggtitle("Log ReportDeliveryTime Histogram")
+
+plot1
+plot2
+# plot3 Don't run this one takes too long and we are not going to use it anyway
+```
+
+### Discussion
+The residual plots is unacceptable. The Q-Q plot demonstrates significant issues as well. A log transformation will be used to correct these problems
+
+## Two way Anova
+### Logged response variable Summary Stats and ANOVA table
+
+
+```{r loggedResponsesummary}
+reportsfilter$ReportDeliveryTimeLog <- log(reportsfilter$ReportDeliveryTime)
+
+model.fit.HrBnSrvlg <- aov(ReportDeliveryTimeLog~Server+HourBinned+RptFrmt:Server, data = reportsfilter)
+Anova(model.fit.HrBnSrvlg,type=3,singular.ok=TRUE)
+
+mysummary<-function(x){
+  result<-c(length(x),mean(x),sd(x),sd(x)/length(x))
+  names(result)<-c("N","Mean","SD","SE")
+  return(result)
+}
+sumstats<-aggregate(ReportDeliveryTimeLog~HourBinned:Server,data=reportsfilter,mysummary)
+sumstats<-cbind(sumstats[,1:2],sumstats[,-(1:2)])
+sumstats
+
+```
+
+### Discussion
+ANOVA table does show that interaction as well as explanatory variables are significant, the p-value has decreased on the "server" variable. The summary statistics standard deviation is more consistent but has intersting patterns.
+
+### Logged response variable Residual plots
+
+```{r loggedResponseResidual}
+myfits<-data.frame(fitted.values=model.fit.HrBnSrvlg$fitted.values,residuals=model.fit.HrBnSrvlg$residuals)
+
+#Residual vs Fitted
+
+plot1<-ggplot(myfits,aes(x=fitted.values,y=residuals))+ylab("Residuals")+
+  xlab("Predicted")+geom_point()+ggtitle("Log ReportDeliveryTime Residuals")
+
+#QQ plot of residuals  #Note the diagonal abline is only good for qqplots of normal data.
+plot2<-ggplot(myfits,aes(sample=residuals))+
+  stat_qq()+geom_abline(intercept=mean(myfits$residuals), slope = sd(myfits$residuals))+
+  ggtitle("Log ReportDeliveryTime Q-Q plot")
+
+#Histogram of residuals
+plot3<-ggplot(myfits, aes(x=residuals)) + 
+  geom_histogram(aes(y=..density..),binwidth=1,color="black", fill="gray")+
+  geom_density(alpha=.1, fill="red")+
+  ggtitle("Log ReportDeliveryTime Histogram")
+
+plot1
+plot2
+plot3
+
+```
+
+### Discussion
+The residual plot shows definite signs of improvement. The Q-Q plot demonstrates significant issues as well. The histogram shows normal distribution
+
+### To Do Contrasts
+
+
+
