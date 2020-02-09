@@ -1,0 +1,776 @@
+---
+title: "Team DAY Project"
+author: "Dustin Bracy, Adam Ruthford, Yang Zhang"
+date: "1/23/2020"
+---
+
+
+## Introduction
+We would like to answer the following questions about our data:
+1. Can we accurately predict the runtime of our reports?
+2. What is the expected average delivery time of a one off report?
+3. What are the best & worst times of day, week, or month to run a report?
+4. Is there a difference in performance between report servers?
+5. What are the biggest impacts on performance of reports?
+
+## Data Description
+We have collected a full year worth of report data spanning Jan 2019 - Jan 2020. The available parameter list is very large. A description of fields is avaiable below:
+
+#### Report Parameters:
+* GroupFI - Fully Insured Client
+* GroupSF - Self Funded Client
+* Agents - Specified agents
+* CurrencyCode - Collection of different lines of business
+* GroupCustom - Collection of different client types
+* SchedFreq - Scheduled Report Frequency
+
+#### Report Metrics:
+* ReportBytes - size in bytes of completed report
+* Server - Server on which the report was built
+* FormID - Uniquely identifies collection of report parameters
+* QueueID - Uniquely identifies queued reports
+* QueuedDateTime - when report entered queue
+* RenderStartDateTime - when server began work on queued report(s) in queueID batch
+* ReportStartDateTime - when server began work on individual report
+* ReportEndDateTime - when server completed work on individual report
+* RenderEndDateTime - when server completed work on queued report(s) in queueID batch
+* Priority - controlled report parameter
+
+#### Engineered Features:
+* ReportBuildTime - ReportEndDateTime less ReportStartDateTime
+* ReportDeliveryTime - RenderEndDateTime less QueuedDateTime
+* LagTime - RenderEndDateTime less ReportEndDateTime
+* QueueTime - RenderStartDateTime less QueuedDateTime
+* DayOfMonth - Day of the month report ran
+* DayOfWeek - Day of the week report ran
+* HourOfDay - Hour of the day report ran
+* NumberOfQueuedReports - How many reports are in the queue and/or processing when the report begins rendering
+
+
+### Report Category Crosswalk:
+
+Eligibility
+"Eligibility","Accumulator","EventHistory","COBRA","RedCard","ComPsych"
+
+Miscellaneous
+"Miscellaneous"
+
+Reinsurance
+"Reinsurance","Aggregate Report"
+
+Professional Liability
+"PL"
+
+Actuarial
+"Actuarial","ISBReports","Renewal",
+**One exception: when rptCategoryDesc = 'renewal' and reportGroup = 'CommissionsTFB' use 'Commissions'**
+
+Finance Commission
+"Commissions","CRMOnlineFinance","CommCnt","CommCompare"
+
+Claims
+"ClaimsAudit","CMSRepting","Repository","GilsbarPPO","Claims"
+
+Medical Management
+"Wellness Repository","MedCom","TVC","MedInsight"
+
+Metrics
+"iTrac","TMS","Customer Service","ODR Admin","PortalStats","AutoAdjudication","Genelco","Supervisor"
+
+Extract
+"DataExtracts","Large Claims Reports"
+
+Finance Billing
+"Billing", "Coverage","Refunds","Credit Card Process","Deposit","CheckRecon","Check Register","FinancePremium", "Premium"
+
+
+
+## Exploratory Analysis
+
+```{r}
+library(data.table) #for %like% function
+library(xml2)
+library(purrr)
+library(lubridate)
+library(tictoc)
+library(kableExtra)
+library(gridExtra)
+
+# import report data:
+load("./data/reports.RData")
+```
+
+```{r EDA}
+
+# Yang EDA
+summary(reports)
+
+#unique(reports$ReportGroupDescription)
+#unique(reports$RptCategoryDesc)
+
+
+```
+
+
+```{r}
+
+
+library(GGally)
+library(forcats)
+library(dplyr)
+
+#data dimensions
+dim(reports)
+
+str(reports[,c(1:10,23)])
+
+# Print out a summary of the dataset
+reports %>% glimpse()
+```
+
+Observations:
+-The 4005 NA values can be moved together.
+-Other factors has large amount of missing values include Agents, GroupGustom, CurrencyCode, groupFI and groupSF.
+
+```{r}
+#Check NA values
+print(colSums(is.na(reports)))
+```
+Observations:
+-3 Servers that processed most reports are SQLODR2, SQLODR3, SQLODR6.
+-Scheule frequency amount ordered by Week, OneDay, Month.
+-Report format has bigger proportion in CSV/PDF followed by TXT/EXCEL.
+-Delivery Method with Web is majority. Test Production indicator with "P" is majority.
+-Report genereated more on WeekDays topped by Monday/Tuesday.
+-Submission time top by 6am in morning, 9am and 6pm are also peak times.
+-1st day of Month is peak report time.
+-Priorities only has 0.1,2,3,10, with 10 is majority.
+
+
+
+
+```{r}
+# Plot Category Variables in character or factor
+##By Server
+reports %>% group_by(Server) %>% dplyr::summarise(Count=n()) %>% ggplot(aes(x=Server, y=Count)) + geom_bar(stat="identity", fill="orange", color="grey40") + labs(title="Server", x="Server",y="Count") + geom_text(aes(x=Server, y=0.01, label= Count), vjust=-2, size=3, colour="black", fontface="bold",angle=360)
+
+#By SchedFreq
+reports %>% group_by(SchedFreq) %>% dplyr::summarise(Count=n()) %>% ggplot(aes(x=SchedFreq, y=Count)) + geom_bar(stat="identity", fill="orange", color="grey40") + labs(title="SchedFreq", x="SchedFreq",y="Count") + geom_text(aes(x=SchedFreq, y=0.01, label= Count), vjust=-2, size=3, colour="black", fontface="bold",angle=360)
+
+#By RptFrmt
+reports %>% group_by(RptFrmt) %>% dplyr::summarise(Count=n()) %>% ggplot(aes(x=RptFrmt, y=Count)) + geom_bar(stat="identity", fill="orange", color="grey40") + labs(title="RptFrmt", x="StatusDesc",y="Count") + geom_text(aes(x=RptFrmt, y=0.01, label= Count), vjust=-2, size=3, colour="black", fontface="bold",angle=360)
+
+#By DelivMthd
+reports %>% group_by(DelivMthd) %>% dplyr::summarise(Count=n()) %>% ggplot(aes(x=DelivMthd, y=Count)) + geom_bar(stat="identity", fill="orange", color="grey40") + labs(title="DelivMthd", x="DelivMthd",y="Count") + geom_text(aes(x=DelivMthd, y=0.01, label= Count), vjust=-2, size=3, colour="black", fontface="bold",angle=360)
+
+#By TestProdIndicator
+reports %>% group_by(TestProdIndicator) %>% dplyr::summarise(Count=n()) %>% ggplot(aes(x=TestProdIndicator, y=Count)) + geom_bar(stat="identity", fill="orange", color="grey40") + labs(title="TestProdIndicator", x="TestProdIndicator",y="Count") + geom_text(aes(x=TestProdIndicator, y=0.01, label= Count), vjust=-2, size=3, colour="black", fontface="bold",angle=360)
+
+#By ReportStartDay
+#reports %>% group_by(ReportStartDay) %>% dplyr::summarise(Count=n()) %>% ggplot(aes(x=ReportStartDay, y=Count)) + geom_bar(stat="identity", fill="orange", color="grey40") + labs(title="ReportStartDay", x="ReportStartDay",y="Count") + geom_text(aes(x=ReportStartDay, y=0.01, label= Count), vjust=-2, size=3, colour="black", fontface="bold",angle=360)
+
+#By DayOfWeek (Duplicate?)
+reports %>% group_by(DayOfWeek) %>% dplyr::summarise(Count=n()) %>% ggplot(aes(x=DayOfWeek, y=Count)) + geom_bar(stat="identity", fill="orange", color="grey40") + labs(title="DayOfWeek", x="DayOfWeek",y="Count") + geom_text(aes(x=DayOfWeek, y=0.01, label= Count), vjust=-2, size=3, colour="black", fontface="bold",angle=360)
+
+#By HourOfDay
+reports %>% group_by(HourOfDay) %>% dplyr::summarise(Count=n()) %>% ggplot(aes(x=HourOfDay, y=Count)) + geom_bar(stat="identity", fill="orange", color="grey40") + labs(title="HourOfDay", x="HourOfDay",y="Count") + geom_text(aes(x=HourOfDay, y=0.01, label= Count), vjust=-2, size=3, colour="black", fontface="bold",angle=360)
+
+#By DayOfMonth
+reports %>% group_by(DayOfMonth) %>% dplyr::summarise(Count=n()) %>% ggplot(aes(x=DayOfMonth, y=Count)) + geom_bar(stat="identity", fill="orange", color="grey40") + labs(title="DayOfMonth", x="DayOfMonth",y="Count") + geom_text(aes(x=DayOfMonth, y=0.01, label= Count), vjust=-2, size=3, colour="black", fontface="bold",angle=360)
+
+#By Priority
+reports %>% group_by(Priority) %>% dplyr::summarise(Count=n()) %>% ggplot(aes(x=Priority, y=Count)) + geom_bar(stat="identity", fill="orange", color="grey40") + labs(title="Priority", x="Priority",y="Count") + geom_text(aes(x=Priority, y=0.01, label= Count), vjust=-2, size=3, colour="black", fontface="bold",angle=360)
+
+#By ReportDeliveryTime should be numeric -- delete later
+#reports %>% group_by(ReportDeliveryTime) %>% dplyr::summarise(Count=n()) %>% ggplot(aes(x=ReportDeliveryTime, y=Count)) + geom_bar(stat="identity", fill="orange", color="grey40") + labs(title="ReportDeliveryTime", x="ReportDeliveryTime",y="Count") + geom_text(aes(x=ReportDeliveryTime, y=0.01, label= Count), vjust=-2, size=3, colour="black", fontface="bold",angle=360)
+
+
+
+```
+Observations:
+-All numric variables (Time or Bytes) need log transformation.
+-Running time tails off with a light peak around 660 seconds
+-Report Bytes has a peak around 268000 Bytes.
+-Report build time around 0-2900 seconds.
+-Report lag time mostly below 1 sec.
+-Report queue time has a peak around 250 sec similiar with report delivery time.
+
+```{r}
+# Plot Numerical Variables
+
+##By ReportDeliveryTime
+reports$ReportDeliveryTime = as.numeric(reports$ReportDeliveryTime)
+ggplot(data=reports[!is.na(reports$ReportDeliveryTime),], aes(x=ReportDeliveryTime)) +
+        geom_histogram(fill="blue", binwidth = 1000) + labs(title="ReportDeliveryTime", x="ReportDeliveryTime")
+
+##By ReportDeliveryTime -- Take log
+reports$ReportDeliveryTime = as.numeric(reports$ReportDeliveryTime)
+ggplot(data=reports[!is.na(reports$ReportDeliveryTime),], aes(x=log(ReportDeliveryTime))) +
+        geom_histogram(fill="blue") + labs(title="ReportDeliveryTime", x="x=log(ReportDeliveryTime)")
+
+##By ReportBytes
+reports_sizel0 <- reports %>% filter(reports$ReportBytes > 0) 
+ggplot(data=reports_sizel0,aes(x=log(reports_sizel0$ReportBytes))) + geom_histogram(fill="blue") + labs(title="ReportBytes", x="log(ReportBytes)")
+
+##By ReportBuildTime
+reports$ReportBuildTime = as.numeric(reports$ReportBuildTime)
+ggplot(data=reports[!is.na(reports$ReportBuildTime),], aes(x=log(ReportBuildTime))) +
+        geom_histogram(fill="blue") + labs(title="ReportBuildTime", x="log(ReportBuildTime)")
+
+##By LagTime
+reports$LagTime = as.numeric(reports$LagTime)
+ggplot(data=reports[!is.na(reports$LagTime),], aes(x=log(LagTime))) +
+        geom_histogram(fill="blue") + labs(title="LagTime", x="log(LagTime)")
+
+##By QueueTime
+reports$QueueTime = as.numeric(reports$QueueTime)
+ggplot(data=reports[!is.na(reports$QueueTime),], aes(x=log(QueueTime))) +
+        geom_histogram(fill="blue") + labs(title="QueueTime", x="log(QueueTime)")
+
+```
+
+Observations:
+-The following numric variables not displayed much variations by servers. Only Delivery/Queue time desplay different feature with server 6/2/3 compared with server 1/5.
+
+```{r}
+
+
+#reports %>% select(ReportDeliveryTime, Server) %>% group_by(ReportDeliveryTime, Server) %>% summarize(n=n()) %>% ggplot(aes(x=Server, y=n) + geom_density(alpha = 0.7)
+                                                                                                        
+g1 <- reports %>% ggplot(aes(x=log(ReportDeliveryTime), fill=Server)) + geom_density(alpha = 0.7) + labs(title="Running time colored by Server")                                                                                                       
+g2 <- reports %>% ggplot(aes(x=log(ReportBytes), fill=Server)) + geom_density(alpha = 0.7) + labs(title="Report Bytes colored by Server")  
+
+g3 <- reports %>% ggplot(aes(x=log(ReportBuildTime), fill=Server)) + geom_density(alpha = 0.7) + labs(title="Report Build time colored by Server")   
+
+g4 <- reports %>% ggplot(aes(x=log(ReportDeliveryTime), fill=Server)) + geom_density(alpha = 0.7) + labs(title="Report Delivery time colored by Server")   
+
+g5 <- reports %>% ggplot(aes(x=log(LagTime), fill=Server)) + geom_density(alpha = 0.7) + labs(title="Lag time colored by Server")   
+
+g6 <- reports %>% ggplot(aes(x=log(QueueTime), fill=Server)) + geom_density(alpha = 0.7) + labs(title="Queued time colored by Server")  
+
+grid.arrange(g1,g2,g3,g4,g5,g6,ncol = 2, nrow = 3)
+```
+
+
+Observations:
+-No obvious differences are observed with discrete variables for server 2,3 and 6.
+
+
+```{r}
+
+reports %>% dplyr::select(SchedFreq, Server) %>% group_by(SchedFreq, Server) %>% dplyr::summarize(n=n()) %>% ggplot(aes(x=Server, y=n, fill=SchedFreq, color=SchedFreq)) + geom_bar(stat="identity", color="grey40") + facet_wrap(~SchedFreq) + geom_label(aes(label=n, fill = SchedFreq), colour = "white", fontface = "italic") +
+    labs(title="SchedFreq by Server", x="Server",y="Amount") 
+
+reports %>% dplyr::select(RptFrmt, Server) %>% group_by(RptFrmt, Server) %>% dplyr::summarize(n=n()) %>% ggplot(aes(x=Server, y=n, fill=RptFrmt, color=RptFrmt)) + geom_bar(stat="identity", color="grey40") + facet_wrap(~RptFrmt) + geom_label(aes(label=n, fill = RptFrmt), colour = "white", fontface = "italic") +
+    labs(title="Report Format grouped by Server", x="Server",y="Amount") 
+
+#reports %>% dplyr::select(RptFrmt, Server) %>% group_by(RptFrmt, Server) %>% dplyr::summarize(n=n()) %>% ggplot(aes(x=RptFrmt, y=n, fill=Server, color=Server)) + geom_bar(stat="identity", color="grey40") + facet_wrap(~Server) + geom_label(aes(label=n, fill = Server), colour = "white", fontface = "italic") + labs(title="Server by Report Format", x="Server",y="Amount") + geom_text(aes(x=RptFrmt, y=0.01, label= n),vjust=-2)
+
+reports %>% dplyr::select(DelivMthd, Server) %>% group_by(DelivMthd, Server) %>% dplyr::summarize(n=n()) %>% ggplot(aes(x=Server, y=n, fill=DelivMthd, color=DelivMthd)) + geom_bar(stat="identity", color="grey40") + facet_wrap(~DelivMthd) + geom_label(aes(label=n, fill = DelivMthd), colour = "white", fontface = "italic") +
+    labs(title="Delivery Method grouped by Server", x="Server",y="Amount") 
+
+reports %>% dplyr::select(TestProdIndicator, Server) %>% group_by(TestProdIndicator, Server) %>% dplyr::summarize(n=n()) %>% ggplot(aes(x=Server, y=n, fill=TestProdIndicator, color=TestProdIndicator)) + geom_bar(stat="identity", color="grey40") + facet_wrap(~TestProdIndicator) + geom_label(aes(label=n, fill = TestProdIndicator), colour = "white", fontface = "italic") +
+    labs(title="Test Production Indicator grouped by Server", x="Server",y="Amount") 
+
+#reports %>% dplyr::select(ReportStartDay, Server) %>% group_by(ReportStartDay, Server) %>% dplyr::summarize(n=n()) %>% ggplot(aes(x=Server, y=n, fill=ReportStartDay, color=ReportStartDay)) + geom_bar(stat="identity", color="grey40") + facet_wrap(~ReportStartDay) + geom_label(aes(label=n, fill = ReportStartDay), colour = "white", fontface = "italic") +
+    labs(title="Report Start Day grouped by Server", x="Server",y="Amount")
+
+###
+
+reports %>% dplyr::select(HourOfDay, Server) %>% group_by(HourOfDay, Server) %>% dplyr::summarize(n=n()) %>% ggplot(aes(x=HourOfDay, y=n, fill=Server, color=Server)) + geom_bar(stat="identity", color="grey40") + facet_wrap(~Server) + geom_label(aes(label=n, fill = Server), colour = "white", fontface = "italic") + labs(title="Server by HourofDay", x="Server",y="Amount") 
+
+reports %>% dplyr::select(DayOfMonth, Server) %>% group_by(DayOfMonth, Server) %>% dplyr::summarize(n=n()) %>% ggplot(aes(x=DayOfMonth, y=n, fill=Server, color=Server)) + geom_bar(stat="identity", color="grey40") + facet_wrap(~Server) + geom_label(aes(label=n, fill = Server), colour = "white", fontface = "italic") + labs(title="Server by DayOfMonth", x="Server",y="Amount") + geom_text(aes(x=DayOfMonth, y=0.01, label= n),vjust=-2)
+
+#reports %>% ggplot(aes(x=log(ReportDeliveryTime), fill=Server)) + geom_histogram()
+```
+
+Observations:
+-RptFrmt is an important factor of differenciating running times.
+
+
+```{r}
+g7 <- reports %>% ggplot(aes(x=log(ReportDeliveryTime), fill=SchedFreq)) + geom_density(alpha = 0.7) + labs(title="Running time colored by SchedFreq") 
+
+g8 <- reports %>% ggplot(aes(x=log(ReportDeliveryTime), fill=RptFrmt)) + geom_density(alpha = 0.7) + labs(title="Running time colored by RptFrmt") 
+
+g9 <- reports %>% ggplot(aes(x=log(ReportDeliveryTime), fill=DelivMthd)) + geom_density(alpha = 0.7) + labs(title="Running time colored by DelivMthd") 
+
+g10 <- reports %>% ggplot(aes(x=log(ReportDeliveryTime), fill=TestProdIndicator)) + geom_density(alpha = 0.7) + labs(title="Running time colored by TestProdIndicator") 
+
+grid.arrange(g7,g8,g9,g10,ncol = 2, nrow = 2)
+
+
+reports %>% ggplot(aes(x=log(ReportDeliveryTime), fill=HourOfDay)) + geom_histogram() + labs(title="Running time by HourOfDay") + facet_wrap(~HourOfDay) 
+
+reports %>% ggplot(aes(x=log(ReportDeliveryTime), fill=DayOfWeek)) + geom_histogram() + labs(title="Running time by DayOfWeek") + facet_wrap(~DayOfWeek)
+
+reports %>% ggplot(aes(x=log(ReportDeliveryTime), fill=DayOfMonth)) + geom_histogram() + labs(title="Running time by DayOfMonth") + facet_wrap(~DayOfMonth) 
+
+reports %>% ggplot(aes(x=log(ReportDeliveryTime), fill=Priority)) + geom_histogram() + labs(title="Running time by Priority") + facet_wrap(~Priority) 
+
+```
+
+Observations:
+-Running time is best correlated with report building time with exceptions in smaller numbers.
+-Delivery time are all bigger than running time which is consisitent with intuition.
+-No obvious trends observed with it together with Lag/Queue Time.
+-ReportBytes are correlated with Running time by large variations. No running time/report bytes differences observed by server.
+
+
+```{r}
+reports %>% dplyr::select(ReportDeliveryTime, ReportBuildTime) %>%
+ggplot(aes(x=log(ReportDeliveryTime), y=log(ReportBuildTime)))+ geom_point() + labs(title="ReportDeliveryTime vs  ReportBuildTime", x="log(ReportDeliveryTime)",y="log(ReportBuildTime)") 
+
+reports %>% dplyr::select(ReportDeliveryTime, ReportDeliveryTime) %>%
+ggplot(aes(x=log(ReportDeliveryTime), y=log(ReportDeliveryTime)))+ geom_point() + labs(title="ReportDeliveryTime vs  ReportDeliveryTime", x="log(ReportDeliveryTime)",y="log(ReportDeliveryTime)") 
+
+reports %>% dplyr::select(ReportDeliveryTime, LagTime) %>%
+ggplot(aes(x=log(ReportDeliveryTime), y=log(LagTime)))+ geom_point() + labs(title="ReportDeliveryTime vs  LagTime", x="log(ReportDeliveryTime)",y="log(LagTime)") 
+
+reports %>% dplyr::select(ReportDeliveryTime, QueueTime) %>%
+ggplot(aes(x=log(ReportDeliveryTime), y=log(QueueTime)))+ geom_point() + labs(title="ReportDeliveryTime vs  QueueTime", x="log(ReportDeliveryTime)",y="log(QueueTime)") 
+
+reports %>% dplyr::select(ReportDeliveryTime, ReportBytes, RptFrmt) %>%
+ggplot(aes(x=log(ReportDeliveryTime), y=log(ReportBytes),colour = RptFrmt ))+ geom_point() + labs(title="ReportDeliveryTime vs  ReportBytes colored by RptFrmt", x="log(ReportDeliveryTime)",y="log(ReportBytes)") + facet_wrap(~RptFrmt) 
+
+reports %>% dplyr::select(ReportDeliveryTime, ReportBytes, Server) %>%
+ggplot(aes(x=log(ReportDeliveryTime), y=log(ReportBytes),colour = Server ))+ geom_point() + labs(title="ReportDeliveryTime vs  ReportBytes colored by Server", x="log(ReportDeliveryTime)",y="log(ReportBytes)") + facet_wrap(~Server)  
+
+reports %>% dplyr::select(ReportDeliveryTime, ReportDeliveryTime, DelivMthd) %>%
+ggplot(aes(x=log(ReportDeliveryTime), y=log(ReportDeliveryTime), colour = DelivMthd))+ geom_point() + labs(title="ReportDeliveryTime vs  ReportDeliveryTime colored by DelivMthd", x="log(ReportDeliveryTime)",y="log(ReportDeliveryTime)") + facet_wrap(~DelivMthd)  
+
+```
+
+```{r}
+unique(reports$Agents)
+unique(reports$GroupCustom)
+unique(reports$CurrencyCode)
+
+reports %>% ggplot(aes(x=log(AgentCount))) + geom_histogram()
+
+reports %>% ggplot(aes(x=log(GroupCount))) + geom_histogram()
+
+```
+
+
+
+
+#Yang's Analysis Start Here
+
+```{r}
+obj1.model2<-lm(ReportDeliveryTime~ReportBuildTime+LagTime+QueueTime, data=reports)
+summary(obj1.model2)
+
+plot(obj1.model2$fitted.values,obj1.model2$residuals,xlab="Fitted Values",ylab="Residuals")
+```
+
+```{r}
+obj1.model3<-lm(ReportDeliveryTime~ReportBuildTime+LagTime+QueueTime+ReportBytes, data=reports)
+summary(obj1.model3)
+```
+```{r}
+t(aggregate(ReportDeliveryTime~ReportCategory,data=reports,summary))
+```
+
+This contains the time parameters can be ignored too.
+```{r}
+
+library(leaps)
+
+sub <- reports %>% dplyr::select(ReportBuildTime,ReportBytes,ReportCategory,LagTime,QueueTime,ReportDeliveryTime)
+
+#sub2 <- reports %>% select(ReportBuildTime,ReportBytes,ReportCategory,LagTime,QueueTime,ReportDeliveryTime,RptFrmt)
+sub$RptFrmt = reports$RptFrmt
+
+obj1.model4<-lm(ReportDeliveryTime~., data=sub)
+summary(obj1.model4)
+
+#reg.fwd=regsubsets(ReportBuildTime~.,data=sub,method="forward",nvmax=4)
+
+obj1.model4<-lm(ReportDeliveryTime~ReportBuildTime+ReportBytes+ReportCategory+LagTime+QueueTime+RptFrmt, data=reports)
+summary(obj1.model4)
+
+```
+
+```{r}
+reports_new <- reports
+reports_new <- within(reports_new, rm(ReportId,QueuedDateTime,RenderStartDateTime,ReportStartDateTime,ReportEndDateTime, RenderEndDateTime,GroupCustom,CurrencyCode,groupSF,groupFI,Agents))
+
+obj1.model5<-lm(ReportDeliveryTime~., data=reports_new)
+summary(obj1.model5)
+
+```
+
+Official Analysis from this down:
+-Removed the time related parameters
+-Removed other servers, left with 2, 3, 6
+-Removed TestProdIndicator other than P
+
+Observations:
+-Fitting generally is not high, around 0.38.
+-Similiar error rate with stepwise or forward feature selections.
+-Error keep dropping with increasing nvmax but real smaller over nxmax=20
+
+```{r}
+
+reports_serv <- reports %>% filter(Server == "SQLODR6"| Server == "SQLODR2"|  Server == "SQLODR3") 
+reports_serv <- reports_serv %>% filter(TestProdIndicator == "P") 
+reports_serv_new <- within(reports_serv,
+rm(ReportId,QueuedDateTime,RenderStartDateTime,ReportStartDateTime,ReportEndDateTime, RenderEndDateTime,GroupCustom,CurrencyCode,groupSF,groupFI,ReportBuildTime,QueueTime,LagTime,Totaltime,Agents,TestProdIndicator,ReportBytes))
+
+#Drop levels of unused server names
+table(droplevels(reports_serv_new)$Server)
+reports_serv_new$Server <- factor(reports_serv_new$Server)
+levels(reports_serv_new$Server)
+
+
+
+all_model<-lm(ReportDeliveryTime~., data=reports_serv_new)
+summary(all_model)
+
+#par(mfrow=c(2,2))
+#plot(all_model)
+
+
+reg.fwd=regsubsets(ReportDeliveryTime~.,data=reports_serv_new,method="forward",nvmax=4)
+summary(reg.fwd)
+
+reg.fwdnv20=regsubsets(ReportDeliveryTime~.,data=reports_serv_new,method="forward",nvmax=20)
+summary(reg.fwdnv20)
+summary(reg.fwdnv20)$adjr2
+summary(reg.fwdnv20)$rss
+summary(reg.fwdnv20)$bic
+
+par(mfrow=c(1,3))
+bics<-summary(reg.fwdnv20)$bic
+plot(1:21,bics,type="l",ylab="BIC",xlab="# of predictors")
+index<-which(bics==min(bics))
+points(index,bics[index],col="red",pch=10)
+
+adjr2<-summary(reg.fwdnv20)$adjr2
+plot(1:21,adjr2,type="l",ylab="Adjusted R-squared",xlab="# of predictors")
+index<-which(adjr2==max(adjr2))
+points(index,adjr2[index],col="red",pch=10)
+
+rss<-summary(reg.fwdnv20)$rss
+plot(1:21,rss,type="l",ylab="train RSS",xlab="# of predictors")
+index<-which(rss==min(rss))
+points(index,rss[index],col="red",pch=10)
+
+reg.fwdnv50=regsubsets(ReportDeliveryTime~.,data=reports_serv_new,method="forward",nvmax=50)
+summary(reg.fwdnv50)
+summary(reg.fwdnv50)$adjr2
+summary(reg.fwdnv20)$rss
+summary(reg.fwdnv20)$bic
+
+par(mfrow=c(1,3))
+bics<-summary(reg.fwdnv50)$bic
+plot(1:51,bics,type="l",ylab="BIC",xlab="# of predictors")
+index<-which(bics==min(bics))
+points(index,bics[index],col="red",pch=10)
+
+adjr2<-summary(reg.fwdnv50)$adjr2
+plot(1:51,adjr2,type="l",ylab="Adjusted R-squared",xlab="# of predictors")
+index<-which(adjr2==max(adjr2))
+points(index,adjr2[index],col="red",pch=10)
+
+rss<-summary(reg.fwdnv50)$rss
+plot(1:51,rss,type="l",ylab="train RSS",xlab="# of predictors")
+index<-which(rss==min(rss))
+points(index,rss[index],col="red",pch=10)
+
+reg.stepnv20=regsubsets(ReportDeliveryTime~.,data=reports_serv_new,method="seqrep",nvmax=20)
+summary(reg.stepnv20)
+summary(reg.stepnv20)$adjr2
+summary(reg.stepnv20)$rss
+summary(reg.stepnv20)$bic
+
+par(mfrow=c(1,3))
+bics<-summary(reg.stepnv20)$bic
+plot(1:21,bics,type="l",ylab="BIC",xlab="# of predictors")
+index<-which(bics==min(bics))
+points(index,bics[index],col="red",pch=10)
+
+adjr2<-summary(reg.stepnv20)$adjr2
+plot(1:21,adjr2,type="l",ylab="Adjusted R-squared",xlab="# of predictors")
+index<-which(adjr2==max(adjr2))
+points(index,adjr2[index],col="red",pch=10)
+
+rss<-summary(reg.stepnv20)$rss
+plot(1:21,rss,type="l",ylab="train RSS",xlab="# of predictors")
+index<-which(rss==min(rss))
+points(index,rss[index],col="red",pch=10)
+
+```
+
+Splitt the data and do predictions
+
+Observations:
+-We need 10+ predictors to get best fit
+-The predictions for test set is not very good.
+
+```{r}
+set.seed(1234)
+index<-sample(1:dim(reports_serv_new)[1],100,replace=F)
+train<-reports_serv_new[index,]
+test<-reports_serv_new[-index,]
+reg.fwd=regsubsets(ReportDeliveryTime~.,data=train,method="forward",nvmax=20)
+
+predict.regsubsets =function (object , newdata ,id ,...){
+  form=as.formula (object$call [[2]])
+  mat=model.matrix(form ,newdata )
+  coefi=coef(object ,id=id)
+  xvars=names(coefi)
+  mat[,xvars]%*%coefi
+}
+
+testASE<-c()
+#note my index is to 20 since that what I set it in regsubsets
+for (i in 1:21){
+  predictions<-predict.regsubsets(object=reg.fwd,newdata=test,id=i) 
+  testASE[i]<-mean((test$ReportDeliveryTime-predictions)^2)
+}
+par(mfrow=c(1,1))
+plot(1:21,testASE,type="l",xlab="# of predictors",ylab="test vs train ASE",ylim=c(10000000,60000000))
+index<-which(testASE==min(testASE))
+points(index,testASE[index],col="red",pch=10)
+rss<-summary(reg.fwd)$rss
+lines(1:21,rss/100,lty=3,col="blue")  #Dividing by 100 since ASE=RSS/sample size
+
+```
+
+Because we find serious imbalance in ReportDeliveryTime distribution, below we log transform the response variables.
+
+-QQ plot show against normality
+-tranformation raise the fitting R^2 to ~0.51
+-There are a few outliners from cook's distance plot, consider remove?
+-Final linear fitting choose parameters: SchedFreq,RptFrmt,HourOfDay,DayOfMonth,ReportCategory,AgentCount
+
+```{r}
+
+all_model_log<-lm(log(ReportDeliveryTime)~., data=reports_serv_new)
+summary(all_model_log)
+
+#par(mfrow=c(2,2))
+#plot(all_model_log)
+
+log.fwdnv20=regsubsets(log(ReportDeliveryTime)~.,data=reports_serv_new,method="forward",nvmax=20)
+summary(log.fwdnv20)
+summary(log.fwdnv20)$adjr2
+summary(log.fwdnv20)$rss
+summary(log.fwdnv20)$bic
+
+
+par(mfrow=c(1,3))
+bics<-summary(log.fwdnv20)$bic
+plot(1:21,bics,type="l",ylab="BIC",xlab="# of predictors")
+index<-which(bics==min(bics))
+points(index,bics[index],col="red",pch=10)
+
+adjr2<-summary(log.fwdnv20)$adjr2
+plot(1:21,adjr2,type="l",ylab="Adjusted R-squared",xlab="# of predictors")
+index<-which(adjr2==max(adjr2))
+points(index,adjr2[index],col="red",pch=10)
+
+rss<-summary(log.fwdnv20)$rss
+plot(1:21,rss,type="l",ylab="train RSS",xlab="# of predictors")
+index<-which(rss==min(rss))
+points(index,rss[index],col="red",pch=10)
+
+
+  
+coef(log.fwdnv20,10)
+
+#coef(log.stepnv20,10)
+
+reports_serv_new <- filter(reports_serv_new, ReportDeliveryTime > 0)
+
+#reg.final=regsubsets(log(ReportDeliveryTime)~.,data=reports_serv_new,method="forward",nvmax=20)
+#coef(reg.final,3)
+final.model<-lm(log(ReportDeliveryTime)~SchedFreq + RptFrmt + HourOfDay + DayOfMonth + ReportCategory + AgentCount,data=reports_serv_new)
+summary(final.model)
+
+#plot(exp(final.model$fitted.values),reports_serv_new$ReportDeliveryTime,xlab="Predicted",ylab="ReportDeliveryTime",xlim=c(0,400000),ylim=c(0,400000))
+#lines(c(0,400000),c(0,400000),col="red")
+
+```
+
+This is an effort of crease "binned" category variables.
+
+The following varaibles are re-binned:
+-DayOfWeek
+-DayofMonth
+-HourofDay
+-ReportCategory
+
+```{r}
+reports_serv_bin <- reports_serv_new
+reports_serv_bin$BinDayOfWeek <- case_when(reports_serv_new$DayOfWeek %in% c("Monday", "Tuesday","Wednesday","Thursday", "Friday") ~ "Weekdays",
+          reports_serv_new$DayOfWeek %in% c("Saturday", "Sunday") ~ "Weekends")
+
+#By BinDayOfWeek
+reports_serv_bin %>% group_by(BinDayOfWeek) %>% dplyr::summarise(Count=n()) %>% ggplot(aes(x=BinDayOfWeek, y=Count)) + geom_bar(stat="identity", fill="orange", color="grey40") + labs(title="BinDayOfWeek", x="BinDayOfWeek",y="Count") + geom_text(aes(x=BinDayOfWeek, y=0.01, label= Count), vjust=-2, size=3, colour="black", fontface="bold",angle=360)
+
+reports_serv_bin$BinHourOfDay <- case_when(reports_serv_new$HourOfDay %in% c("00", "01","02","03", "04","05") ~ "Midnight",
+          reports_serv_new$HourOfDay %in% c("06", "07","08","09") ~ "Day1",
+          reports_serv_new$HourOfDay %in% c("10", "11","12","13") ~ "Day2",
+          reports_serv_new$HourOfDay %in% c("14", "15","16","17") ~ "Day3",
+          reports_serv_new$HourOfDay %in% c("18", "19","20","21","22","23") ~ "Night")
+
+
+#By BinHourOfDay
+reports_serv_bin %>% group_by(BinHourOfDay) %>% dplyr::summarise(Count=n()) %>% ggplot(aes(x=BinHourOfDay, y=Count)) + geom_bar(stat="identity", fill="orange", color="grey40") + labs(title="BinHourOfDay", x="BinHourOfDay",y="Count") + geom_text(aes(x=BinHourOfDay, y=0.01, label= Count), vjust=-2, size=3, colour="black", fontface="bold",angle=360)
+
+reports_serv_bin$BinDayOfMonth <- case_when(reports_serv_new$DayOfMonth %in% c("01","02","03", "04","05") ~ "FirstWeek",
+          TRUE ~ "Others")
+
+#By BinDayOfMonth
+reports_serv_bin %>% group_by(BinDayOfMonth) %>% dplyr::summarise(Count=n()) %>% ggplot(aes(x=BinDayOfMonth, y=Count)) + geom_bar(stat="identity", fill="orange", color="grey40") + labs(title="BinDayOfMonth", x="BinDayOfMonth",y="Count") + geom_text(aes(x=BinDayOfMonth, y=0.01, label= Count), vjust=-2, size=3, colour="black", fontface="bold",angle=360)
+
+
+reports_serv_bin %>% group_by(ReportCategory) %>% dplyr::summarise(Count=n()) %>% ggplot(aes(x=ReportCategory, y=Count)) + geom_bar(stat="identity", fill="orange", color="grey40") + labs(title="ReportCategory", x="ReportCategory",y="Count") + geom_text(aes(x=ReportCategory, y=0.01, label= Count), vjust=-2, size=3, colour="black", fontface="bold",angle=360)
+
+reports_serv_bin %>% ggplot(aes(x=log(ReportDeliveryTime), fill=ReportCategory)) + geom_density(alpha = 0.7) + labs(title="Running time colored by Server") + facet_wrap(~ReportCategory)     
+
+reports_serv_bin$BinReportCategory <- case_when(reports_serv_new$ReportCategory %in% c("Actuarial", "Professional Liability") ~ "Cat1",
+          reports_serv_new$ReportCategory %in% c("Reinsurance") ~ "Cat2",
+          TRUE ~ "Others")
+
+reports_serv_bin %>% ggplot(aes(x=log(ReportDeliveryTime), fill=BinReportCategory)) + geom_density(alpha = 0.7) + labs(title="Running time colored by Server") + facet_wrap(~BinReportCategory)   
+
+```
+
+Re-do the fitting with those binned variables but find no improvements on the fitting.
+
+```{r}
+all_model_log_bin<-lm(log(ReportDeliveryTime)~., data=reports_serv_bin)
+summary(all_model_log_bin)
+#With binned variables together R2 doesn't change
+
+reports_serv_bin_clean <- within(reports_serv_bin,
+rm(DayOfWeek,DayOfMonth,HourOfDay,ReportCategory))
+
+all_model_log_bin2<-lm(log(ReportDeliveryTime)~., data=reports_serv_bin_clean)
+summary(all_model_log_bin2)
+#R2 reduced to 38%, this attempt is not successful, doesn't continue.
+
+```
+
+The effort of using lasso for this problem
+
+The parameters found important are:
+-SchedFreq
+-RptFrmt
+-AgentCount
+-ReportCategory
+-DayofMonth
+-DayofWeek
+-HourofDay
+
+```{r,echo=T}
+library(glmnet)
+#Formatting data for GLM net
+x=model.matrix(ReportDeliveryTime~.,train)[,-1]
+y=log(train$ReportDeliveryTime)
+
+xtest<-model.matrix(ReportDeliveryTime~.,test)[,-1]
+ytest<-log(test$ReportDeliveryTime)
+
+
+
+grid=10^seq(10,-2, length =100)
+lasso.mod=glmnet(x,y,alpha=1, lambda =grid)
+
+cv.out=cv.glmnet(x,y,alpha=1) #alpha=1 performs LASSO
+plot(cv.out)
+bestlambda<-cv.out$lambda.min  #Optimal penalty parameter.  You can make this call visually.
+lasso.pred=predict (lasso.mod ,s=bestlambda ,newx=xtest)
+
+#testMSE_LASSO<-mean((ytest-lasso.pred)^2)
+#testMSE_LASSO
+
+coef(lasso.mod,s=bestlambda)
+
+```
+
+## Addressing Objective 1:
+	Restatement of Problem and the overall approach to solve it Required
+
+### Model Selection Required
+		Type of Selection
+			Options: LASSO, RIDGE, ELASTIC NET,
+			     Stepwise, Forward, Backward, 
+		             	     Manual / Intuition,
+			     A mix of all of the above.  	
+
+### Checking Assumptions Required
+			Residual Plots
+			Influential point analysis (Cook’s D and Leverage)
+
+		Compare Competing Models Optional (Helpful if using 2 model strategy)
+			Via:  Training and test set split or CV
+                                        Possible Metrics: (ASE, AIC, BIC, adj R2, etc)
+	
+### Parameter Interpretation
+		Interpretation  Required
+		Confidence Intervals Required
+	
+### Final conclusions from the analyses of Objective 1 Required
+
+
+
+In addition to overall conclusions, feel free to include additional insights or concerns gleaned from the analysis.  What needs to be done next or how could we do it better next time?  
+
+## Addressing Objective 2
+State what route you are going to take 2way ANOVA or Time series and summarize the goal.  Required
+
+### Main Analysis Content Required
+	This will depend on the route you take.  I’m leaving it open here to see what you do.
+
+
+
+## Addressing Objective 1:
+	Restatement of Problem and the overall approach to solve it Required
+
+### Model Selection Required
+		Type of Selection
+			Options: LASSO, RIDGE, ELASTIC NET,
+			     Stepwise, Forward, Backward, 
+		             	     Manual / Intuition,
+			     A mix of all of the above.  	
+
+### Checking Assumptions Required
+			Residual Plots
+			Influential point analysis (Cook’s D and Leverage)
+
+		Compare Competing Models Optional (Helpful if using 2 model strategy)
+			Via:  Training and test set split or CV
+                                        Possible Metrics: (ASE, AIC, BIC, adj R2, etc)
+	
+### Parameter Interpretation
+		Interpretation  Required
+		Confidence Intervals Required
+	
+### Final conclusions from the analyses of Objective 1 Required
+
+
+
+In addition to overall conclusions, feel free to include additional insights or concerns gleaned from the analysis.  What needs to be done next or how could we do it better next time?  
+
+## Addressing Objective 2
+State what route you are going to take 2way ANOVA or Time series and summarize the goal.  Required
+
+### Main Analysis Content Required
+	This will depend on the route you take.  I’m leaving it open here to see what you do.
+
+### Conclusion/Discussion Required
+		The conclusion should reprise the questions and conclusions of objective 2.
+
+### Appendix Required
+	Well commented SAS/R Code Required
+ 	Graphics and summary tables (Can be placed in the appendix or in the written report itself.)
+
+
+
+
+
