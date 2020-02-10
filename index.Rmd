@@ -193,6 +193,34 @@ reports$Agents <- sapply(reports$XMLResponseStringClean, function(x)
   ifelse(x %like% '<AgentCode>', xml_find_all(read_xml(x), './/AgentCode') %>% xml_text(), NA))
 toc()
 
+# Capture number of days:
+tic("Dates")
+reports$DateFrom <- sapply(reports$XMLResponseStringClean, function(x) 
+  ifelse(x %like% 'DateFrom>\\d+'| x %like% 'DateRangeFrom', str_replace(x, '.*Date(RangeFrom|From)>(\\d+)</.*', '\\2'), NA))
+reports$DateThru <- sapply(reports$XMLResponseStringClean, function(x) 
+  ifelse(x %like% 'DateThru>\\d+'| x %like% 'DateRangeThru', str_replace(x, '.*Date(RangeThru|Thru)>(\\d+)</.*', '\\2'), NA))
+
+reports$queued <- as_date(reports$QueuedDateTime)
+reports$queued <- str_replace_all(reports$queued, "-", "")
+
+reports$DateThru <- ifelse(is.na(reports$DateThru),NA,ifelse((as_date(reports$DateThru) > as_date('20251231') | reports$DateThru == "") & as_date(reports$DateFrom) != as_date(reports$DateThru), reports$queued, reports$DateThru))
+
+reports$NumDays <- ifelse(is.na(reports$DateFrom) | is.na(reports$DateThru) , NA , difftime(as_date(reports$DateThru), as_date(reports$DateFrom) , units = "days"))
+reports$NumDays <- ifelse(as_date(reports$DateFrom) == as_date(reports$DateThru), 1, reports$NumDays)
+reports$NumDays <- abs(reports$NumDays)
+
+reports$NumDays <- ifelse(reports$XMLResponseStringClean %like% '>(CURRENT|PRIOR)YEAR<', 365, reports$NumDays)
+reports$NumDays <- ifelse(reports$XMLResponseStringClean %like% '>(CURRENT|PRIOR)QUARTER<', 91, reports$NumDays)
+reports$NumDays <- ifelse(reports$XMLResponseStringClean %like% '>(CURRENT|PRIOR)MONTH<', 30, reports$NumDays)
+reports$NumDays <- ifelse(reports$XMLResponseStringClean %like% '>(CURRENT|PRIOR)WEEK<', 7, reports$NumDays)
+reports$NumDays <- ifelse(reports$XMLResponseStringClean %like% '>(CURRENT|PRIOR)DAY<', 1, reports$NumDays)
+reports$NumDays <- ifelse(reports$XMLResponseStringClean %like% '>ROLLING3MONTHS<', 91, reports$NumDays)
+reports$NumDays <- ifelse(reports$XMLResponseStringClean %like% '>ROLLING6MONTHS<', 182, reports$NumDays)
+reports$NumDays <- ifelse(reports$XMLResponseStringClean %like% '>ROLLING12MONTHS<', 365, reports$NumDays)
+reports$NumDays <- ifelse(reports$XMLResponseStringClean %like% '>ROLLING15MONTHS<', 456, reports$NumDays)
+reports$NumDays <- ifelse(reports$XMLResponseStringClean %like% '>ROLLING24MONTHS<', 730, reports$NumDays)
+toc()
+
 # Count commas to determine number of Agents
 reports$AgentCount <- ifelse(is.na(reports$Agents), 0, str_count(reports$Agents, ',')+1)
 
@@ -275,31 +303,122 @@ MissingValues %>% kable("html") %>% kable_styling()
 # Stash the original data before we drop columns
 reportsOrg <- reports
 
-# Drop columns we don't need:
-dropColumns <- c('XMLResponseString','ReportGroupDescription','ReportPath','StatusDesc','NotifiedDateTime','DeletedDateTime','FormDeleted','ProcessId','FormId','QueueId','RunTimeInMinsSecs','RptCategoryId','CurrencyCodeGroups','CustomGroupCount','RptCategoryDesc', 'RuntimeSec', 'NearestStartHour','XMLResponseStringClean','RunTimeSEC','ReportStartDay')
-reports <- reports[ , !(names(reports) %in% dropColumns)]
-
 # Convert to factors:
 reports$SchedFreq <- as.factor(reports$SchedFreq)
 reports$TestProdIndicator <- as.factor(reports$TestProdIndicator)
 reports$DelivMthd <- as.factor(reports$DelivMthd)
 reports$DayOfMonth <- as.factor(reports$DayOfMonth)
 reports$DayOfWeek <- as.factor(reports$DayOfWeek)
-reports$NearestStartHour <- as.factor(reports$NearestStartHour)
 reports$ReportCategory <- as.factor(reports$ReportCategory)
 reports$RptFrmt <- as.factor(reports$RptFrmt)
 reports$Priority <- as.factor(reports$Priority)
 reports$HourOfDay <- as.factor(reports$HourOfDay)
 reports$Server <- as.factor(reports$Server)
 
+# Drop columns we don't need:
+#dropColumns <- c('XMLResponseString','ReportGroupDescription','ReportPath','StatusDesc','NotifiedDateTime','DeletedDateTime','FormDeleted','ProcessId','FormId','QueueId','RunTimeInMinsSecs','RptCategoryId','CurrencyCodeGroups','CustomGroupCount','RptCategoryDesc', 'RuntimeSec', 'NearestStartHour','XMLResponseStringClean','RunTimeSEC','ReportStartDay')
+#reports <- reports[ , !(names(reports) %in% dropColumns)]
 # Save data for analysis:
 save(reports, file="./data/reports.RData")
 
 toc()
+
+
+
+```
+
+```{r}
+
+reports$TimeBlock <- case_when(reports$HourOfDay %in% 
+                              c("00","01","02","03","04","05") ~ "Maintenance",
+                            reports$HourOfDay %in% 
+                              c("06","07","08") ~ "6am-8am",
+                            reports$HourOfDay %in% 
+                              c("09","10","11")~ "9am-11am",
+                            reports$HourOfDay %in% 
+                              c("12","13","14")~ "12pm-2pm",
+                            reports$HourOfDay %in% 
+                              c("15","16","17")~ "3pm-5pm",
+                            reports$HourOfDay %in% 
+                              c("18","19","20","21","22","23")~ "Overnight",
+                            TRUE~"OTHER")
+
+reports$TimeBlock2 <- case_when(reports$HourOfDay %in% 
+                              c("00","01","02","03","04","05") ~ "Maintenance",
+                            reports$HourOfDay %in% 
+                              c("06","07","08","09") ~ "6am-9am",
+                            reports$HourOfDay %in% 
+                              c("10","11","12","13")~ "10am-1pm",
+                            reports$HourOfDay %in% 
+                              c("14","15","16","17")~ "2pm-5pm",
+                            reports$HourOfDay %in% 
+                              c("18","19","20","21","22","23")~ "Overnight",
+                            TRUE~"OTHER")
+
 ```
 
 
+```{r experimental}
 
+summary(reports)
+
+reports <- reports %>% filter(Server %in% c('SQLODR2','SQLODR3','SQLODR6'))
+reports <- reports %>% filter(ReportDeliveryTime != 0)
+
+fit <- lm(ReportBuildTime~GroupCount+AgentCount+NumDays+ReportCategory , data=reports)
+
+reports$NumDays <- ifelse(is.na(reports$NumDays),.1,reports$NumDays)
+reports$GroupCount <- ifelse(is.na(reports$GroupCount),.1,reports$GroupCount)
+reports$GroupCount <- ifelse((reports$GroupCount == 0),.1,reports$GroupCount)
+
+log(reports$ReportDeliveryTime)
+log(reports$ReportBuildTime)
+log(reports$GroupCount)
+log(reports$NumDays)
+
+
+fit <- lm(log(ReportBuildTime)~Server + Priority +log(GroupCount)
+          +ReportCategory+log(NumDays)+DayOfWeek+DayOfMonth+AgentCount+RptFrmt+DelivMthd+HourOfDay, data=reports)
+summary(fit)
+
+fit <-lm(log(ReportBuildTime)~ReportCategory+TimeBlock+ReportCategory*TimeBlock, data=reports)
+summary(fit)
+
+
+fit2 <-lm(log(ReportBuildTime)~ReportCategory+TimeBlock+DayOfMonth+
+            ReportCategory*TimeBlock+DayOfMonth*TimeBlock + ReportCategory*DayOfMonth+
+            ReportCategory*TimeBlock*DayOfMonth, data=reports2)
+summary(fit2)
+
+reports$first <- ifelse(reports$DayOfMonth == "01", 1, 0)
+reports$six <- ifelse(reports$HourOfDay == "06", 1, 0)
+
+fit3 <- lm(log(ReportBuildTime)~ReportCategory+first+six+first*six+ReportCategory*six+ReportCategory*firs, data=reports)
+summary(fit3)
+
+library(olsrr) #residual plot analysis
+
+olsrr::ols_plot_diagnostics(fit)
+
+summary(reports$ReportDeliveryTime)
+
+#Drop two outliers, reports which are highly likely to be errors:
+reports <- reports %>% filter(ReportDeliveryTime < 400000)
+reports <- reports %>% filter(ReportDeliveryTime > 0)
+reports2 <- reports %>% filter(HourOfDay %in% c("06","07","08","09","10","11","12","13","14","15","16","17","18"))
+reports2 <- reports2 %>% filter(DayOfWeek %in% c("Monday","Tuesday","Wednesday","Thursday","Friday"))
+summary(reports)
+
+trainIndices = sample(1:dim(reports)[1],round(.7 * dim(reports)[1]))
+  train = reports[trainIndices,]
+  test = reports[-trainIndices,]
+  prd <- predict(fit, interval="predict",newdata = test)
+RMSE <- sqrt(mean((prd[,1] - test$ReportDeliveryTime)^2))
+RMSE
+
+?sample
+
+```
 
 
 
