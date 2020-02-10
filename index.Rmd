@@ -16,11 +16,11 @@ knitr::opts_chunk$set(echo = TRUE)
 library(tidyverse)
 library(data.table) #for %like% function
 library(xml2)
-library(purrr)
 library(lubridate)
 library(tictoc)
 library(kableExtra)
 library(gridExtra)
+library(olsrr) #residual plot analysis
 
 # import report data:
 load("./data/reports.RData")
@@ -165,11 +165,12 @@ load("./data/originalReports.RData")
 load("./data/customGroups.RData")
 load("./data/currencyCode.RData")
 
-# Remove imported reports:
-reports <- reports %>% filter(Server != 'IMPSERVICE')
+# Remove imported reports & dev servers:
+reports <- reports %>% filter(Server %in% c('SQLODR2','SQLODR3','SQLODR6'))
 
 # Drop report with bad data:
 reports <- reports %>% filter(!is.na(RunTimeSEC))
+
 tic('clean XML')
 
 # Clean up the XML:
@@ -248,6 +249,8 @@ toc()
 # Merge counts:
 reports$GroupCount <- ifelse(!is.na(reports$groupFI), 1, reports$GroupCount)
 reports$GroupCount <- ifelse(!is.na(reports$groupSF), 1, reports$GroupCount)
+reports$GroupCount <- ifelse(reports$XMLResponseStringClean %like% '<ExtGroupNumber>', 1, reports$GroupCount)
+reports$GroupCount <- ifelse(reports$XMLResponseStringClean %like% '>ALLGROUPS<', 8353, reports$GroupCount)
 reports$GroupCount <- ifelse(is.na(reports$GroupCount), reports$CurrencyCodeGroups, reports$GroupCount)
 reports$GroupCount <- ifelse(reports$CurrencyCodeGroups < reports$GroupCount & reports$CurrencyCodeGroups > 0, reports$CurrencyCodeGroups, reports$GroupCount)
 
@@ -299,6 +302,12 @@ reports$HourOfDay <- format(as_datetime(reports$ReportStartDateTime),"%H")
 # NAs at a glance:
 MissingValues <- sapply(reports, function(x) sum(is.na(x)))
 MissingValues %>% kable("html") %>% kable_styling()
+
+# Drop extreme outliers, reports which are highly likely to be errors:
+reports <- reports %>% filter(ReportDeliveryTime < 300000)
+
+# Remove delivery time < 0
+reports <- reports %>% filter(ReportDeliveryTime > 0)
 
 # Stash the original data before we drop columns
 reportsOrg <- reports
@@ -362,52 +371,29 @@ reports$TimeBlock2 <- case_when(reports$HourOfDay %in%
 
 summary(reports)
 
-reports <- reports %>% filter(Server %in% c('SQLODR2','SQLODR3','SQLODR6'))
-reports <- reports %>% filter(ReportDeliveryTime != 0)
-
 fit <- lm(ReportBuildTime~GroupCount+AgentCount+NumDays+ReportCategory , data=reports)
 
-reports$NumDays <- ifelse(is.na(reports$NumDays),.1,reports$NumDays)
-reports$GroupCount <- ifelse(is.na(reports$GroupCount),.1,reports$GroupCount)
-reports$GroupCount <- ifelse((reports$GroupCount == 0),.1,reports$GroupCount)
+#reports$NumDays <- ifelse(is.na(reports$NumDays),43574, reports$NumDays)
+#reports$NumDays <- ifelse(reports$NumDays == 0,43574, reports$NumDays)
+
+max(reports$NumDays)
+max(reports$GroupCount)
+
+reports$GroupCount <- ifelse(is.na(reports$GroupCount),8353,reports$GroupCount)
+reports$GroupCount <- ifelse((reports$GroupCount == 0),8353,reports$GroupCount)
 
 log(reports$ReportDeliveryTime)
 log(reports$ReportBuildTime)
 log(reports$GroupCount)
 log(reports$NumDays)
 
+#reports2<- reports %>% filter(ReportBuildTime < 7200) # Reports running over 2 hours are anomoly but possible. 4 hours is hard cutoff for build time.
 
-fit <- lm(log(ReportBuildTime)~Server + Priority +log(GroupCount)
-          +ReportCategory+log(NumDays)+DayOfWeek+DayOfMonth+AgentCount+RptFrmt+DelivMthd+HourOfDay, data=reports)
+
+fit <- lm(log(ReportBuildTime)~ReportCategory + GroupCount + GroupCount*ReportCategory + HourOfDay, data=reports)
+#fit <- lm(log(ReportBuildTime)~Server+Priority+GroupCount+ReportCategory+DayOfWeek+DayOfMonth+AgentCount+RptFrmt+DelivMthd+HourOfDay, data=reports)
 summary(fit)
 
-fit <-lm(log(ReportBuildTime)~ReportCategory+TimeBlock+ReportCategory*TimeBlock, data=reports)
-summary(fit)
-
-
-fit2 <-lm(log(ReportBuildTime)~ReportCategory+TimeBlock+DayOfMonth+
-            ReportCategory*TimeBlock+DayOfMonth*TimeBlock + ReportCategory*DayOfMonth+
-            ReportCategory*TimeBlock*DayOfMonth, data=reports2)
-summary(fit2)
-
-reports$first <- ifelse(reports$DayOfMonth == "01", 1, 0)
-reports$six <- ifelse(reports$HourOfDay == "06", 1, 0)
-
-fit3 <- lm(log(ReportBuildTime)~ReportCategory+first+six+first*six+ReportCategory*six+ReportCategory*firs, data=reports)
-summary(fit3)
-
-library(olsrr) #residual plot analysis
-
-olsrr::ols_plot_diagnostics(fit)
-
-summary(reports$ReportDeliveryTime)
-
-#Drop two outliers, reports which are highly likely to be errors:
-reports <- reports %>% filter(ReportDeliveryTime < 400000)
-reports <- reports %>% filter(ReportDeliveryTime > 0)
-reports2 <- reports %>% filter(HourOfDay %in% c("06","07","08","09","10","11","12","13","14","15","16","17","18"))
-reports2 <- reports2 %>% filter(DayOfWeek %in% c("Monday","Tuesday","Wednesday","Thursday","Friday"))
-summary(reports)
 
 trainIndices = sample(1:dim(reports)[1],round(.7 * dim(reports)[1]))
   train = reports[trainIndices,]
@@ -416,7 +402,44 @@ trainIndices = sample(1:dim(reports)[1],round(.7 * dim(reports)[1]))
 RMSE <- sqrt(mean((prd[,1] - test$ReportDeliveryTime)^2))
 RMSE
 
-?sample
+
+
+fit <-lm(log(ReportBuildTime)~ReportCategory+first+six+ReportCategory*six+ReportCategory*first+first*six+six*first*ReportCategory, data=reports)
+summary(fit)
+
+tic('fit')
+fit <-lm(log(ReportBuildTime)~ReportCategory, data=reports) # r2 = 29.07, , 7055 RMSE
+#fit <-lm(log(ReportBuildTime)~as.factor(ReportId), data=reports) # r2 = 79.47, pred time = ~240 sec, 7260 RMSE
+#fit <-lm(log(ReportBuildTime)~as.factor(ReportId)+GroupCount, data=reports) # r2 = 79.71 ~209 sec
+#fit <-lm(log(ReportBuildTime)~as.factor(ReportId)+HourOfDay, data=reports) # r2 = 79.66 ~226 sec
+#fit <-lm(log(ReportBuildTime)~as.factor(ReportId)+DayOfMonth+HourOfDay+GroupCount+RptFrmt+Server, data=reports) # r2 = 80.65 ~247 sec
+#fit <-lm(log(ReportBuildTime)~as.factor(ReportId)first+six, data=reports) # r2 = 79.47 ~241 sec
+
+summary(fit)
+toc()
+
+
+fit2 <-lm(log(ReportDeliveryTime)~ReportCategory+TimeBlock+ReportCategory*TimeBlock, data=reports)
+summary(fit2)
+
+
+
+
+olsrr::ols_plot_diagnostics(fit)
+
+summary(reports)
+
+# Throwaway section:
+
+reports2 <- reports %>% filter(HourOfDay %in% c("06","07","08","09","10","11","12","13","14","15","16","17","18"))
+reports2 <- reports2 %>% filter(DayOfWeek %in% c("Monday","Tuesday","Wednesday","Thursday","Friday"))
+
+reports$first <- ifelse(reports$DayOfMonth == "01", 1, 0)
+reports$six <- ifelse(reports$HourOfDay == "06", 1, 0)
+
+
+reports$NumParams <- ifelse(is.na(reports$XMLResponseStringClean) | reports$XMLResponseStringClean == '', 1, str_count(reports$XMLResponseStringClean, '</'))
+
 
 ```
 
