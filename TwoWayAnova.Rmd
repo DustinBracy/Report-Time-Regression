@@ -35,8 +35,6 @@ reports$HourBinned <- case_when(reports$HourOfDay %in% c("06","07") ~ "0607",
                                     reports$HourOfDay %in% c("00","01","02","03","04","05")~ "0005",
                                     TRUE~"OTHER")
 
-reportsfilter <- reports %>% filter(!Server == "SQLODR1" & !Server == "SQLODR5")
-
 ```
 
 ## Two way Anova
@@ -44,15 +42,15 @@ reportsfilter <- reports %>% filter(!Server == "SQLODR1" & !Server == "SQLODR5")
 
 
 ```{r UnloggedResponseSummary}
-model.fit.HrBnSrv <- aov(ReportDeliveryTime~Server+HourBinned+RptFrmt:Server, data = reportsfilter)
-Anova(model.fit.HrBnSrv,type=3,singular.ok=TRUE)
+model.fit.HrBnSrv <- aov(ReportDeliveryTime~Server+HourBinned+HourBinned:Server, data = reports)
+Anova(model.fit.HrBnSrv,type=3,singular.ok=FALSE)
 
 mysummary<-function(x){
   result<-c(length(x),mean(x),sd(x),sd(x)/length(x))
   names(result)<-c("N","Mean","SD","SE")
   return(result)
 }
-sumstats<-aggregate(ReportDeliveryTime~HourBinned:Server,data=reportsfilter,mysummary)
+sumstats<-aggregate(ReportDeliveryTime~HourBinned:Server,data=reports,mysummary)
 sumstats<-cbind(sumstats[,1:2],sumstats[,-(1:2)])
 sumstats
 
@@ -95,17 +93,17 @@ The residual plots is unacceptable. The Q-Q plot demonstrates significant issues
 
 
 ```{r loggedResponsesummary}
-reportsfilter$ReportDeliveryTimeLog <- log(reportsfilter$ReportDeliveryTime)
+reports$ReportDeliveryTimeLog <- log(reports$ReportDeliveryTime)
 
-model.fit.HrBnSrvlg <- aov(ReportDeliveryTimeLog~Server+HourBinned+RptFrmt:Server, data = reportsfilter)
-Anova(model.fit.HrBnSrvlg,type=3,singular.ok=TRUE)
+model.fit.HrBnSrvlg <- aov(ReportDeliveryTimeLog~Server+HourBinned+HourBinned:Server, data = reports)
+Anova(model.fit.HrBnSrvlg,type=3,singular.ok=FALSE)
 
 mysummary<-function(x){
   result<-c(length(x),mean(x),sd(x),sd(x)/length(x))
   names(result)<-c("N","Mean","SD","SE")
   return(result)
 }
-sumstats<-aggregate(ReportDeliveryTimeLog~HourBinned:Server,data=reportsfilter,mysummary)
+sumstats<-aggregate(ReportDeliveryTimeLog~HourBinned:Server,data=reports,mysummary)
 sumstats<-cbind(sumstats[,1:2],sumstats[,-(1:2)])
 sumstats
 
