@@ -398,9 +398,10 @@ summary(fit)
 trainIndices = sample(1:dim(reports)[1],round(.7 * dim(reports)[1]))
   train = reports[trainIndices,]
   test = reports[-trainIndices,]
-  prd <- predict(fit, interval="predict",newdata = test)
+  prd <- predict(fit3, interval="predict",newdata = test)
 RMSE <- sqrt(mean((prd[,1] - test$ReportDeliveryTime)^2))
 RMSE
+plot(log(test$ReportBuildTime), prd[,1])
 
 
 
@@ -408,21 +409,27 @@ fit <-lm(log(ReportBuildTime)~ReportCategory+first+six+ReportCategory*six+Report
 summary(fit)
 
 tic('fit')
-fit <-lm(log(ReportBuildTime)~ReportCategory, data=reports) # r2 = 29.07, , 7055 RMSE
-#fit <-lm(log(ReportBuildTime)~as.factor(ReportId), data=reports) # r2 = 79.47, pred time = ~240 sec, 7260 RMSE
+#fit <-lm(ReportBuildTime~ReportCategory, data=reports) # r2 = 29.07, , 7055 RMSE
+fit <-lm(log(ReportBuildTime)~as.factor(ReportId), data=reports) # r2 = 79.47, pred time = ~240 sec, 7260 RMSE
+summary(fit)
+
+tic('fit')
+fit2 <- lm(log(ReportDeliveryTime)~as.factor(ReportId), data=reports)
+fit3 <- lm(log(ReportBuildTime)~as.factor(ReportId), data=reports)
+
+summary(fit2)
+
 #fit <-lm(log(ReportBuildTime)~as.factor(ReportId)+GroupCount, data=reports) # r2 = 79.71 ~209 sec
 #fit <-lm(log(ReportBuildTime)~as.factor(ReportId)+HourOfDay, data=reports) # r2 = 79.66 ~226 sec
 #fit <-lm(log(ReportBuildTime)~as.factor(ReportId)+DayOfMonth+HourOfDay+GroupCount+RptFrmt+Server, data=reports) # r2 = 80.65 ~247 sec
 #fit <-lm(log(ReportBuildTime)~as.factor(ReportId)first+six, data=reports) # r2 = 79.47 ~241 sec
 
-summary(fit)
+#summary(fit)
 toc()
 
 
 fit2 <-lm(log(ReportDeliveryTime)~ReportCategory+TimeBlock+ReportCategory*TimeBlock, data=reports)
 summary(fit2)
-
-
 
 
 olsrr::ols_plot_diagnostics(fit)
@@ -441,8 +448,35 @@ reports$six <- ifelse(reports$HourOfDay == "06", 1, 0)
 reports$NumParams <- ifelse(is.na(reports$XMLResponseStringClean) | reports$XMLResponseStringClean == '', 1, str_count(reports$XMLResponseStringClean, '</'))
 
 
+r <- reports %>% filter(ReportCategory == 'Professional Liability')
+
 ```
 
+
+```{r correlation}
+r <- reports %>% filter(ReportCategory == 'Professional Liability')
+
+
+fit <- lm(log(ReportDeliveryTime)~GroupCount+NumParams+HourOfDay+DayOfMonth, data=r)
+summary(fit)
+
+r <- reports %>% filter(ReportCategory == 'Finance Commission')
+
+r$clients <- sapply(r$XMLResponseStringClean, function(x) 
+  ifelse(x %like% '<ClientCode>', str_replace(x, '.ClientCode>(\\d+)</.*', '\\1'), NA))
+
+
+t <- table(log(test$ReportDeliveryTime),prd[1])
+plot(log(test$ReportDeliveryTime), prd[,1])
+
+```
+
+
+
+```{r}
+
+
+```
 
 
 ## Addressing Objective 1:
