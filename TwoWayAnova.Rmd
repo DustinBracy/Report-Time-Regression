@@ -144,5 +144,40 @@ The residual plot shows definite signs of improvement. The Q-Q plot demonstrates
 
 ### To Do Contrasts
 
+```{r ContrastsHours}
+TukeyHSD(model.fit.HrBnSrvlg,"HourBinned",conf.level=.95)
 
+library(lsmeans) #maybe need eemeans package
+contrast.factor<-~HourBinned
+mycontrast<-c("1415-1011","1823-1617")
+dat<-reports
+
+library(limma)
+final.result<-c()
+for( j in 1:length(mycontrast)){
+contrast.factor.names<-gsub(" ", "", unlist(strsplit(as.character(contrast.factor),split = "*", fixed = T))[-1])
+contrast.factor.2 <- vector("list", length(contrast.factor.names))
+for (i in 1:length(contrast.factor.names)) {
+  contrast.factor.2[[i]] <- levels(dat[, contrast.factor.names[i]])
+}
+new.factor.levels <- do.call(paste, c(do.call(expand.grid, 
+                                              contrast.factor.2), sep = ""))
+temp.cont<-mycontrast[j]
+contrast2 <- list(comparison = as.vector(do.call(makeContrasts, 
+                                                list(contrasts = temp.cont, levels = new.factor.levels))))
+
+contrast.result <- summary(contrast(lsmeans(model.fit, 
+                                            contrast.factor), contrast2, by = NULL))
+
+final.result<-rbind(final.result,contrast.result)
+}
+#Cleaning up and applying bonferroni correction to the number
+#of total comparisons investigated.
+final.result$contrast<-mycontrast
+final.result$bonf<-length(mycontrast)*final.result$p.value
+final.result$bonf[final.result$bonf>1]<-1
+
+final.result
+
+```
 
