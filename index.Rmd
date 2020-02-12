@@ -113,12 +113,13 @@ grid.arrange(e.hour,e.month,  ncol=2, nrow=1)
 
 # ReportId fit: (takes a few minutes) ~79% r^2 and 2.83s MSE
 fit <- lm(log(ReportBuildTime)~as.factor(ReportId), data=reports)
+fit2 <- lm(log(ReportDeliveryTime)~as.factor(ReportId), data=reports)
 
 ```
 
 ```{r Fit Diagnostics}
 
-# Note this is using ReportBuildTime.  Change to DeliveryTime if you fit it as response!
+########### Report Build Time Section ########### 
 summary(fit)
 
 # Split data into test/train (using 90% to increase plotting speed)
@@ -146,6 +147,32 @@ ggplot(preds, aes(test$ReportBuildTime, exp(p[,1]))) + geom_point() + labs (x="P
 
 # Zoom in to see same scale:
 ggplot(preds, aes(test$ReportBuildTime, exp(p[,1]))) + geom_point() + labs (x="Predicted Seconds", y="Actual Seconds") + xlim(0, 1500) + ylim(0, 1500) 
+
+########### Report Delivery Time Section ########### 
+
+summary(fit2)
+
+# Make predictions & calculate MSE
+p <- predict(fit2, interval="predict",newdata = test)
+RMSE <- sqrt(mean((p[,1] - log(test$ReportDeliveryTime))^2))
+# Back transform the RMSE:
+exp(RMSE)
+
+# Plot the predictions vs test data:
+preds <- data.frame(cbind(log(test$ReportDeliveryTime), p[,1]))
+
+# raw log data:
+plot(log(test$ReportDeliveryTime), p[,1])
+
+# pretty raw log data:
+ggplot(preds, aes(log(test$ReportDeliveryTime), p[,1])) + geom_point() + labs (x="Predicted Log Seconds", y="Actual Log Seconds")
+
+# back transformed data: (note the outliers)
+ggplot(preds, aes(test$ReportDeliveryTime, exp(p[,1]))) + geom_point() + labs (x="Predicted Seconds", y="Actual Seconds")
+
+# Zoom in to see same scale:
+ggplot(preds, aes(test$ReportDeliveryTime, exp(p[,1]))) + geom_point() + labs (x="Predicted Seconds", y="Actual Seconds") + xlim(0, 20000) + ylim(0, 20000) 
+
 
 ```
 
