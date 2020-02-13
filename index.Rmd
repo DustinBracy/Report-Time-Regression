@@ -82,19 +82,22 @@ e.hour <- reports %>% group_by(HourOfDay) %>% summarise(Count=n()) %>% ggplot(ae
 #By DayOfMonth
 e.month <- reports %>% group_by(DayOfMonth) %>% summarise(Count=n()) %>% ggplot(aes(x=fct_rev(DayOfMonth), y=Count)) + geom_bar(stat="identity", fill="orange", color="grey40") + labs(title="Reports by Day Of Month", x="DayOfMonth",y="Count") + geom_text(aes(x=DayOfMonth, y=0.01, label= Count), vjust=0.5, hjust=-.25, size=3, colour="black", fontface="bold",angle=360) + coord_flip()
 
-#By ReportCategory
-e.category <- reports %>% group_by(ReportCategory) %>% summarise(Count=n()) %>% ggplot(aes(x=fct_rev(ReportCategory), y=Count)) + geom_bar(stat="identity", fill="orange", color="grey40") + labs(title="Reports By Category", x="ReportCategory",y="Count") + geom_text(aes(x=ReportCategory, y=0.01, label= Count), vjust=0.5, hjust=-.25, size=3, colour="black", fontface="bold",angle=360) + coord_flip()
+#By ReportCategory - Count
+e.categorySum <- reports %>% group_by(ReportCategory) %>% summarise(Count=n()) %>% ggplot(aes(x=fct_rev(ReportCategory), y=Count)) + geom_bar(stat="identity", fill="orange", color="grey40") + labs(title="Sum of Reports By Category", x="Report Category",y="Reports") + geom_text(aes(x=ReportCategory, y=0.01, label= Count), vjust=0.5, hjust=-.25, size=3, colour="black", fontface="bold",angle=360) + coord_flip()
+
+#By ReportCategory - Avg Delivery
+e.categoryDelivery <- reports %>% group_by(ReportCategory) %>% summarise(MeanDelivery=round(mean(ReportDeliveryTime),0)) %>% ggplot(aes(x=fct_rev(ReportCategory), y=MeanDelivery)) + geom_bar(stat="identity", fill="orange", color="grey40") + labs(title="Mean Delivery Time By Category", x="Report Category",y="Seconds") + geom_text(aes(x=ReportCategory, y=0.01, label= MeanDelivery), vjust=0.5, hjust=-.25, size=3, colour="black", fontface="bold",angle=360) + coord_flip()
+
+#By ReportCategory - Avg Delivery
+e.categoryBuild <- reports %>% group_by(ReportCategory) %>% summarise(AvgTime=round(mean(ReportBuildTime),0)) %>% ggplot(aes(x=fct_rev(ReportCategory), y=AvgTime)) + geom_bar(stat="identity", fill="orange", color="grey40") + labs(title="Mean Build Time By Category", x="Report Category",y="Seconds") + geom_text(aes(x=ReportCategory, y=0.01, label= AvgTime), vjust=0.5, hjust=-.25, size=3, colour="black", fontface="bold",angle=360) + coord_flip()
 
 grid.arrange(e.freq, e.priority, e.format, e.delivery,  ncol=2, nrow=2)
 grid.arrange(e.server,e.weekday,  ncol=1, nrow=2)
-e.category
+grid.arrange(e.categorySum, e.categoryDelivery, e.categoryBuild, ncol=1, nrow=3)
 
 # Buildtime by server
 reports %>% ggplot(aes(x=log(ReportBuildTime), fill=Server)) + geom_density(alpha = 0.7) + labs(title="Report Build time colored by Server")   
 
-# Schedule Freq by Server
-reports %>% dplyr::select(SchedFreq, Server) %>% group_by(SchedFreq, Server) %>% dplyr::summarize(n=n()) %>% ggplot(aes(x=Server, y=n, fill=SchedFreq, color=SchedFreq)) + geom_bar(stat="identity", color="grey40") + facet_wrap(~SchedFreq) + geom_label(aes(label=n, fill = SchedFreq), colour = "white", fontface = "italic") +
-    labs(title="SchedFreq by Server", x="Server",y="Amount") 
 
 ```
 
@@ -159,27 +162,27 @@ ggplot(preds, aes(test$ReportBuildTime, exp(p[,1]))) + geom_point() + labs (y="P
 summary(fit2)
 
 # Make predictions & calculate MSE
-p <- predict(fit2, interval="predict",newdata = test)
-RMSE <- sqrt(mean((p[,1] - log(test$ReportDeliveryTime))^2))
+p2 <- predict(fit2, interval="predict",newdata = test)
+RMSE <- sqrt(mean((p2[,1] - log(test$ReportDeliveryTime))^2))
 # Back transform the RMSE:
 exp(RMSE)
 
 # Plot the predictions vs test data:
-preds <- data.frame(cbind(log(test$ReportDeliveryTime), p[,1]))
+preds2 <- data.frame(cbind(log(test$ReportDeliveryTime), p[,1]))
 
 # raw log data:
-plot(log(test$ReportDeliveryTime), p[,1])
+plot(log(test$ReportDeliveryTime), p2[,1])
 
 # pretty raw log data:
-ggplot(preds, aes(log(test$ReportDeliveryTime), p[,1])) + geom_point() + 
+ggplot(preds2, aes(log(test$ReportDeliveryTime), p2[,1])) + geom_point() + 
   labs (y="Predicted Log Seconds", x="Actual Log Seconds")
 
 # back transformed data: (note the outliers)
-ggplot(preds, aes(test$ReportDeliveryTime, exp(p[,1]))) + geom_point() + 
+ggplot(preds2, aes(test$ReportDeliveryTime, exp(p2[,1]))) + geom_point() + 
   labs (y="Predicted Seconds", x="Actual Seconds")
 
 # Zoom in to see same scale:
-ggplot(preds, aes(test$ReportDeliveryTime, exp(p[,1]))) + geom_point() + 
+ggplot(preds2, aes(test$ReportDeliveryTime, exp(p2[,1]))) + geom_point() + 
   labs (y="Predicted Seconds", x="Actual Seconds") + xlim(0, 20000) + ylim(0, 20000) 
 
 
