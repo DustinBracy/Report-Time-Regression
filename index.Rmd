@@ -58,64 +58,12 @@ Gilsbar offers a comprehensive reporting package to both its internal employees 
 Gilsbar has provided report data spanning a 12 month period from January 2019 through January 2020. The available parameter list is very large, having over 500 parameters used in the past year.  In order to narrow the scope of the project, we focused on completed reports only, and determined the parameters show below would be most useful in predicting report run time. A description of other, non-utilized fields is avaiable below in the appendix. Also listed there is a crosswalk provided which groups like-type reports into 11 categories. 
 
 ## Approach Methodology
-We'd like to tackle these questions using two separate models for interpretation.  First, we use Multiple Linear Regression techniques to predict runtime using several of the report metrics and features.  Second, we will utilize two-way ANOVA techniques to compare ReportDeliveryTime vs Server, Report Category, and Report Format.
+We'd like to tackle these questions using two separate models for interpretation.  For our first objective, we use Multiple Linear Regression techniques to predict runtime using several of the report metrics and features.  As our second objective, we will utilize two-way ANOVA techniques to compare ReportDeliveryTime vs Server, Report Category, and Report Format.
 
 # Exploratory Data Analysis
 
 
-# Appendix: EDA Plots:
-
-```{r EDA, fig.width=7.25, fig.height=4.5, echo=TRUE, cache=TRUE}
-# Plot Categorical Variables in character or factor
-
-# Count By Server
-e.server <- reports %>% group_by(Server) %>% summarise(Count=n()) %>% ggplot(aes(x=Server, y=Count)) + geom_bar(stat="identity", fill="orange", color="grey40") + labs(title="Reports by Server", x="Server",y="Count") + geom_text(aes(x=Server, y=0.01, label= Count), vjust=-2, size=3, colour="black", fontface="bold",angle=360)
-
-# Count By SchedFreq
-e.freq <- reports %>% group_by(SchedFreq) %>% summarise(Count=n()) %>% ggplot(aes(x=SchedFreq, y=Count)) + geom_bar(stat="identity", fill="orange", color="grey40") + labs(title="Reports by Schedule Frequency", x="Schedule Frequency",y="Count") + geom_text(aes(x=SchedFreq, y=0.01, label= Count), vjust=-2, size=3, colour="black", fontface="bold",angle=360)
-
-# Count By RptFrmt
-e.format <- reports %>% group_by(RptFrmt) %>% summarise(Count=n()) %>% ggplot(aes(x=RptFrmt, y=Count)) + geom_bar(stat="identity", fill="orange", color="grey40") + labs(title="Reports by Report Format", x="Report Format",y="Count") + geom_text(aes(x=RptFrmt, y=0.01, label= Count), vjust=-2, size=3, colour="black", fontface="bold",angle=360)
-
-# Count By DelivMthd
-e.delivery <- reports %>% group_by(DelivMthd) %>% summarise(Count=n()) %>% ggplot(aes(x=DelivMthd, y=Count)) + geom_bar(stat="identity", fill="orange", color="grey40") + labs(title="Reports by Delivery Method", x="Delivery Method",y="Count") + geom_text(aes(x=DelivMthd, y=0.01, label= Count), vjust=-2, size=3, colour="black", fontface="bold",angle=360)
-
-# Count By Priority
-e.priority <- reports %>% group_by(Priority) %>% summarise(Count=n()) %>% ggplot(aes(x=Priority, y=Count)) + geom_bar(stat="identity", fill="orange", color="grey40") + labs(title="Reports by Priority", x="Priority",y="Count") + geom_text(aes(x=Priority, y=0.01, label= Count), vjust=-2, size=3, colour="black", fontface="bold",angle=360)
-
-# Count By DayOfWeek
-e.weekday <- reports %>% group_by(DayOfWeek) %>% summarise(Count=n()) %>% ggplot(aes(x=DayOfWeek, y=Count)) + geom_bar(stat="identity", fill="orange", color="grey40") + labs(title="Reports by Day Of Week", x="DayOfWeek",y="Count") + geom_text(aes(x=DayOfWeek, y=0.01, label= Count), vjust=-2, size=3, colour="black", fontface="bold",angle=360) 
-
-# Count By HourOfDay
-e.hour <- reports %>% group_by(HourOfDay) %>% summarise(Count=n()) %>% ggplot(aes(x=fct_rev(HourOfDay), y=Count)) + geom_bar(stat="identity", fill="orange", color="grey40") + labs(title="Reports by Hour Of Day", x="HourOfDay",y="Count") + geom_text(aes(x=HourOfDay, y=0.01, label= Count), vjust=0.5, hjust=-.25, size=3, colour="black", fontface="bold",angle=360) + coord_flip()
-
-# Count By DayOfMonth
-e.month <- reports %>% group_by(DayOfMonth) %>% summarise(Count=n()) %>% ggplot(aes(x=fct_rev(DayOfMonth), y=Count)) + geom_bar(stat="identity", fill="orange", color="grey40") + labs(title="Reports by Day Of Month", x="DayOfMonth",y="Count") + geom_text(aes(x=DayOfMonth, y=0.01, label= Count), vjust=0.5, hjust=-.25, size=3, colour="black", fontface="bold",angle=360) + coord_flip()
-
-# Count By ReportCategory
-e.categorySum <- reports %>% group_by(ReportCategory) %>% summarise(Count=n()) %>% ggplot(aes(x=fct_rev(ReportCategory), y=Count)) + geom_bar(stat="identity", fill="orange", color="grey40") + labs(title="Sum of Reports By Category", x="Report Category",y="Reports") + geom_text(aes(x=ReportCategory, y=0.01, label= Count), vjust=0.5, hjust=-.25, size=3, colour="black", fontface="bold",angle=360) + coord_flip()
-
-# Avg Delivery time by ReportCategory 
-e.categoryDelivery <- reports %>% group_by(ReportCategory) %>% summarise(MeanDelivery=round(mean(ReportDeliveryTime),0)) %>% ggplot(aes(x=fct_rev(ReportCategory), y=MeanDelivery)) + geom_bar(stat="identity", fill="orange", color="grey40") + labs(title="Mean Delivery Time By Category", x="Report Category",y="Seconds") + geom_text(aes(x=ReportCategory, y=0.01, label= MeanDelivery), vjust=0.5, hjust=-.25, size=3, colour="black", fontface="bold",angle=360) + coord_flip()
-
-# Avg Build time by ReportCategory 
-e.categoryBuild <- reports %>% group_by(ReportCategory) %>% summarise(AvgTime=round(mean(ReportBuildTime),0)) %>% ggplot(aes(x=fct_rev(ReportCategory), y=AvgTime)) + geom_bar(stat="identity", fill="orange", color="grey40") + labs(title="Mean Build Time By Category", x="Report Category",y="Seconds") + geom_text(aes(x=ReportCategory, y=0.01, label= AvgTime), vjust=0.5, hjust=-.25, size=3, colour="black", fontface="bold",angle=360) + coord_flip()
-
-grid.arrange(e.freq, e.priority, e.format, e.delivery,  ncol=2, nrow=2)
-grid.arrange(e.server,e.weekday,  ncol=1, nrow=2)
-
-# Buildtime by server
-reports %>% ggplot(aes(x=log(ReportBuildTime), fill=Server)) + geom_density(alpha = 0.7) + labs(title="Report Build time colored by Server")   
-
-
-```
-
-
-```{r fig.width=7.25, fig.height=7.25, cache=TRUE}
-grid.arrange(e.categorySum, e.categoryDelivery, e.categoryBuild, ncol=1, nrow=3)
-
-grid.arrange(e.hour,e.month,  ncol=2, nrow=1)
-```
+(TODO)
 
 
 
@@ -196,11 +144,20 @@ ggplot(preds, aes(test$ReportBuildTime, exp(p[,1]))) + geom_point() + labs (y="P
 
 ```
 
+# Objective 1:
+Using known parameters of a desired report, can we predict how long it will take to run a particular report? 
+
+We have found it best to use all parameters made available to us within the transformed 'reports' dataset to fit the response variable “ReportDeliveryTime.”  Within the report, intuition tells us a few key parameters contribute strongly to the delivery time.  For example: ReportBuildTime, QueueTime, LagTime and ReportBytes, cannot be used because they are all unknown before report completion. 
+
+## The Intuitive Model:
+Our EDA analysis revealed that there are several categorical variables that don’t show an apparent linear relationship with ReportDeliveryTime.  Also, we found that our response variable, ReportDeliveryTime, is heavily right skewed and likely needs a log transformation in order to continue analysis.
+
+Given some additional knowledge of the dataset, we learned that the ReportID (Specific Report) may related to the ReportBuildTime.  To explore this, we converted the ReportID to factors and conducted simple linear regression, giving us an R^2 of 0.79 which is very good, however the ReportID has over 1500 factor levels which make the explanation difficult, so we have to make other fittings and temporarily ignore ReportID.
+Some additional pre-knowledge of the dataset make us filter the dataset further: Only the 3 “working” servers are included and only the TestProdIndicator equal to”P” are preserved. Because the amount of data are very large and we don’t find a dependency of ReportID with ReportDeliveryTime, we choose a single type of report “ReportID=93”, which is roughly 1/10 of the overall dataset as a representative subset and use it for later analysis.
+
+With this subset, we filtered out a few more parameters and the left 10 parameters for fittings are: Server, ReportCategory, SchedFreq, HourOfDay, DayOfMonth, ReportCategory,Server, AgentCount, GroupCount,DelivMethod. First we did a fit with all parameters and get a resulted R^2 of 0.36. It was not too bad.
 
 
-
-## Addressing Objective 1:
-	Restatement of Problem and the overall approach to solve it Required
 
 ### Model Selection Required
 		Type of Selection
@@ -221,11 +178,8 @@ ggplot(preds, aes(test$ReportBuildTime, exp(p[,1]))) + geom_point() + labs (y="P
 		Interpretation  Required
 		Confidence Intervals Required
 	
-### Final conclusions from the analyses of Objective 1 Required
-
-## Yang Edit Objective 1:
-
-
+## Conclusion
+In conclusion, the mulit-linear model with 5 predictors leveraging a logged response gave the best MSE with avoidance of overfitting. We used a train and test split to validate the MSE across many method and reach this conclusion.
 
 ```{r , cache=TRUE}
 reports_serv <- reports %>% filter(Server == "SQLODR6"| Server == "SQLODR2"|  Server == "SQLODR3") 
@@ -482,6 +436,8 @@ RMSE_org_ELA <- RMSE(exp(predictions_ela), exp(ytest))
 
 
 In addition to overall conclusions, feel free to include additional insights or concerns gleaned from the analysis.  What needs to be done next or how could we do it better next time?  
+
+# Objective 2: Section
 
 ## Addressing Objective 2
 State what route you are going to take 2way ANOVA or Time series and summarize the goal.  Required
@@ -890,4 +846,56 @@ toc()
 
 ```
 
+# Appendix: EDA Plots:
 
+```{r EDA plots, fig.width=7.25, fig.height=4.5, echo=TRUE, cache=TRUE}
+# Plot Categorical Variables in character or factor
+
+# Count By Server
+e.server <- reports %>% group_by(Server) %>% summarise(Count=n()) %>% ggplot(aes(x=Server, y=Count)) + geom_bar(stat="identity", fill="orange", color="grey40") + labs(title="Reports by Server", x="Server",y="Count") + geom_text(aes(x=Server, y=0.01, label= Count), vjust=-2, size=3, colour="black", fontface="bold",angle=360)
+
+# Count By SchedFreq
+e.freq <- reports %>% group_by(SchedFreq) %>% summarise(Count=n()) %>% ggplot(aes(x=SchedFreq, y=Count)) + geom_bar(stat="identity", fill="orange", color="grey40") + labs(title="Reports by Schedule Frequency", x="Schedule Frequency",y="Count") + geom_text(aes(x=SchedFreq, y=0.01, label= Count), vjust=-2, size=3, colour="black", fontface="bold",angle=360)
+
+# Count By RptFrmt
+e.format <- reports %>% group_by(RptFrmt) %>% summarise(Count=n()) %>% ggplot(aes(x=RptFrmt, y=Count)) + geom_bar(stat="identity", fill="orange", color="grey40") + labs(title="Reports by Report Format", x="Report Format",y="Count") + geom_text(aes(x=RptFrmt, y=0.01, label= Count), vjust=-2, size=3, colour="black", fontface="bold",angle=360)
+
+# Count By DelivMthd
+e.delivery <- reports %>% group_by(DelivMthd) %>% summarise(Count=n()) %>% ggplot(aes(x=DelivMthd, y=Count)) + geom_bar(stat="identity", fill="orange", color="grey40") + labs(title="Reports by Delivery Method", x="Delivery Method",y="Count") + geom_text(aes(x=DelivMthd, y=0.01, label= Count), vjust=-2, size=3, colour="black", fontface="bold",angle=360)
+
+# Count By Priority
+e.priority <- reports %>% group_by(Priority) %>% summarise(Count=n()) %>% ggplot(aes(x=Priority, y=Count)) + geom_bar(stat="identity", fill="orange", color="grey40") + labs(title="Reports by Priority", x="Priority",y="Count") + geom_text(aes(x=Priority, y=0.01, label= Count), vjust=-2, size=3, colour="black", fontface="bold",angle=360)
+
+# Count By DayOfWeek
+e.weekday <- reports %>% group_by(DayOfWeek) %>% summarise(Count=n()) %>% ggplot(aes(x=DayOfWeek, y=Count)) + geom_bar(stat="identity", fill="orange", color="grey40") + labs(title="Reports by Day Of Week", x="DayOfWeek",y="Count") + geom_text(aes(x=DayOfWeek, y=0.01, label= Count), vjust=-2, size=3, colour="black", fontface="bold",angle=360) 
+
+# Count By HourOfDay
+e.hour <- reports %>% group_by(HourOfDay) %>% summarise(Count=n()) %>% ggplot(aes(x=fct_rev(HourOfDay), y=Count)) + geom_bar(stat="identity", fill="orange", color="grey40") + labs(title="Reports by Hour Of Day", x="HourOfDay",y="Count") + geom_text(aes(x=HourOfDay, y=0.01, label= Count), vjust=0.5, hjust=-.25, size=3, colour="black", fontface="bold",angle=360) + coord_flip()
+
+# Count By DayOfMonth
+e.month <- reports %>% group_by(DayOfMonth) %>% summarise(Count=n()) %>% ggplot(aes(x=fct_rev(DayOfMonth), y=Count)) + geom_bar(stat="identity", fill="orange", color="grey40") + labs(title="Reports by Day Of Month", x="DayOfMonth",y="Count") + geom_text(aes(x=DayOfMonth, y=0.01, label= Count), vjust=0.5, hjust=-.25, size=3, colour="black", fontface="bold",angle=360) + coord_flip()
+
+# Count By ReportCategory
+e.categorySum <- reports %>% group_by(ReportCategory) %>% summarise(Count=n()) %>% ggplot(aes(x=fct_rev(ReportCategory), y=Count)) + geom_bar(stat="identity", fill="orange", color="grey40") + labs(title="Sum of Reports By Category", x="Report Category",y="Reports") + geom_text(aes(x=ReportCategory, y=0.01, label= Count), vjust=0.5, hjust=-.25, size=3, colour="black", fontface="bold",angle=360) + coord_flip()
+
+# Avg Delivery time by ReportCategory 
+e.categoryDelivery <- reports %>% group_by(ReportCategory) %>% summarise(MeanDelivery=round(mean(ReportDeliveryTime),0)) %>% ggplot(aes(x=fct_rev(ReportCategory), y=MeanDelivery)) + geom_bar(stat="identity", fill="orange", color="grey40") + labs(title="Mean Delivery Time By Category", x="Report Category",y="Seconds") + geom_text(aes(x=ReportCategory, y=0.01, label= MeanDelivery), vjust=0.5, hjust=-.25, size=3, colour="black", fontface="bold",angle=360) + coord_flip()
+
+# Avg Build time by ReportCategory 
+e.categoryBuild <- reports %>% group_by(ReportCategory) %>% summarise(AvgTime=round(mean(ReportBuildTime),0)) %>% ggplot(aes(x=fct_rev(ReportCategory), y=AvgTime)) + geom_bar(stat="identity", fill="orange", color="grey40") + labs(title="Mean Build Time By Category", x="Report Category",y="Seconds") + geom_text(aes(x=ReportCategory, y=0.01, label= AvgTime), vjust=0.5, hjust=-.25, size=3, colour="black", fontface="bold",angle=360) + coord_flip()
+
+grid.arrange(e.freq, e.priority, e.format, e.delivery,  ncol=2, nrow=2)
+grid.arrange(e.server,e.weekday,  ncol=1, nrow=2)
+
+# Buildtime by server
+reports %>% ggplot(aes(x=log(ReportBuildTime), fill=Server)) + geom_density(alpha = 0.7) + labs(title="Report Build time colored by Server")   
+
+
+```
+
+
+```{r EDA plots2 fig.width=7.25, fig.height=7.25, cache=TRUE}
+grid.arrange(e.categorySum, e.categoryDelivery, e.categoryBuild, ncol=1, nrow=3)
+
+grid.arrange(e.hour,e.month,  ncol=2, nrow=1)
+```
