@@ -11,7 +11,7 @@ editor_options:
 always_allow_html: yes
 ---
 
-```{r setup, include=FALSE}
+```{r setup, include=FALSE, cache=TRUE}
 knitr::opts_chunk$set(echo = TRUE)
 library(tidyverse)
 library(data.table) #for %like% function
@@ -21,9 +21,19 @@ library(tictoc)
 library(kableExtra)
 library(gridExtra)
 library(olsrr) #residual plot analysis
+library(GGally)
+library(leaps)
+library(glmnet)
+library(caret)
+library(car)
+library(limma)
+library(lsmeans)
 
 # import report data:
 load("./data/reports.RData")
+
+# import helper functions:
+source("./R/helperFunctions.R")
 
 # wordStyleRef style changes:
 ## Set margins to .5"
@@ -55,45 +65,44 @@ We'd like to tackle these questions using two separate models for interpretation
 
 # Appendix: EDA Plots:
 
-```{r EDA, fig.width=7.25, fig.height=4.5, echo=TRUE}
+```{r EDA, fig.width=7.25, fig.height=4.5, echo=TRUE, cache=TRUE}
 # Plot Categorical Variables in character or factor
 
-# By Server
+# Count By Server
 e.server <- reports %>% group_by(Server) %>% summarise(Count=n()) %>% ggplot(aes(x=Server, y=Count)) + geom_bar(stat="identity", fill="orange", color="grey40") + labs(title="Reports by Server", x="Server",y="Count") + geom_text(aes(x=Server, y=0.01, label= Count), vjust=-2, size=3, colour="black", fontface="bold",angle=360)
 
-#By SchedFreq
+# Count By SchedFreq
 e.freq <- reports %>% group_by(SchedFreq) %>% summarise(Count=n()) %>% ggplot(aes(x=SchedFreq, y=Count)) + geom_bar(stat="identity", fill="orange", color="grey40") + labs(title="Reports by Schedule Frequency", x="Schedule Frequency",y="Count") + geom_text(aes(x=SchedFreq, y=0.01, label= Count), vjust=-2, size=3, colour="black", fontface="bold",angle=360)
 
-#By RptFrmt
+# Count By RptFrmt
 e.format <- reports %>% group_by(RptFrmt) %>% summarise(Count=n()) %>% ggplot(aes(x=RptFrmt, y=Count)) + geom_bar(stat="identity", fill="orange", color="grey40") + labs(title="Reports by Report Format", x="Report Format",y="Count") + geom_text(aes(x=RptFrmt, y=0.01, label= Count), vjust=-2, size=3, colour="black", fontface="bold",angle=360)
 
-#By DelivMthd
+# Count By DelivMthd
 e.delivery <- reports %>% group_by(DelivMthd) %>% summarise(Count=n()) %>% ggplot(aes(x=DelivMthd, y=Count)) + geom_bar(stat="identity", fill="orange", color="grey40") + labs(title="Reports by Delivery Method", x="Delivery Method",y="Count") + geom_text(aes(x=DelivMthd, y=0.01, label= Count), vjust=-2, size=3, colour="black", fontface="bold",angle=360)
 
-#By Priority
+# Count By Priority
 e.priority <- reports %>% group_by(Priority) %>% summarise(Count=n()) %>% ggplot(aes(x=Priority, y=Count)) + geom_bar(stat="identity", fill="orange", color="grey40") + labs(title="Reports by Priority", x="Priority",y="Count") + geom_text(aes(x=Priority, y=0.01, label= Count), vjust=-2, size=3, colour="black", fontface="bold",angle=360)
 
-#By DayOfWeek
+# Count By DayOfWeek
 e.weekday <- reports %>% group_by(DayOfWeek) %>% summarise(Count=n()) %>% ggplot(aes(x=DayOfWeek, y=Count)) + geom_bar(stat="identity", fill="orange", color="grey40") + labs(title="Reports by Day Of Week", x="DayOfWeek",y="Count") + geom_text(aes(x=DayOfWeek, y=0.01, label= Count), vjust=-2, size=3, colour="black", fontface="bold",angle=360) 
 
-#By HourOfDay
+# Count By HourOfDay
 e.hour <- reports %>% group_by(HourOfDay) %>% summarise(Count=n()) %>% ggplot(aes(x=fct_rev(HourOfDay), y=Count)) + geom_bar(stat="identity", fill="orange", color="grey40") + labs(title="Reports by Hour Of Day", x="HourOfDay",y="Count") + geom_text(aes(x=HourOfDay, y=0.01, label= Count), vjust=0.5, hjust=-.25, size=3, colour="black", fontface="bold",angle=360) + coord_flip()
 
-#By DayOfMonth
+# Count By DayOfMonth
 e.month <- reports %>% group_by(DayOfMonth) %>% summarise(Count=n()) %>% ggplot(aes(x=fct_rev(DayOfMonth), y=Count)) + geom_bar(stat="identity", fill="orange", color="grey40") + labs(title="Reports by Day Of Month", x="DayOfMonth",y="Count") + geom_text(aes(x=DayOfMonth, y=0.01, label= Count), vjust=0.5, hjust=-.25, size=3, colour="black", fontface="bold",angle=360) + coord_flip()
 
-#By ReportCategory - Count
+# Count By ReportCategory
 e.categorySum <- reports %>% group_by(ReportCategory) %>% summarise(Count=n()) %>% ggplot(aes(x=fct_rev(ReportCategory), y=Count)) + geom_bar(stat="identity", fill="orange", color="grey40") + labs(title="Sum of Reports By Category", x="Report Category",y="Reports") + geom_text(aes(x=ReportCategory, y=0.01, label= Count), vjust=0.5, hjust=-.25, size=3, colour="black", fontface="bold",angle=360) + coord_flip()
 
-#By ReportCategory - Avg Delivery
+# Avg Delivery time by ReportCategory 
 e.categoryDelivery <- reports %>% group_by(ReportCategory) %>% summarise(MeanDelivery=round(mean(ReportDeliveryTime),0)) %>% ggplot(aes(x=fct_rev(ReportCategory), y=MeanDelivery)) + geom_bar(stat="identity", fill="orange", color="grey40") + labs(title="Mean Delivery Time By Category", x="Report Category",y="Seconds") + geom_text(aes(x=ReportCategory, y=0.01, label= MeanDelivery), vjust=0.5, hjust=-.25, size=3, colour="black", fontface="bold",angle=360) + coord_flip()
 
-#By ReportCategory - Avg Delivery
+# Avg Build time by ReportCategory 
 e.categoryBuild <- reports %>% group_by(ReportCategory) %>% summarise(AvgTime=round(mean(ReportBuildTime),0)) %>% ggplot(aes(x=fct_rev(ReportCategory), y=AvgTime)) + geom_bar(stat="identity", fill="orange", color="grey40") + labs(title="Mean Build Time By Category", x="Report Category",y="Seconds") + geom_text(aes(x=ReportCategory, y=0.01, label= AvgTime), vjust=0.5, hjust=-.25, size=3, colour="black", fontface="bold",angle=360) + coord_flip()
 
 grid.arrange(e.freq, e.priority, e.format, e.delivery,  ncol=2, nrow=2)
 grid.arrange(e.server,e.weekday,  ncol=1, nrow=2)
-grid.arrange(e.categorySum, e.categoryDelivery, e.categoryBuild, ncol=1, nrow=3)
 
 # Buildtime by server
 reports %>% ggplot(aes(x=log(ReportBuildTime), fill=Server)) + geom_density(alpha = 0.7) + labs(title="Report Build time colored by Server")   
@@ -102,31 +111,33 @@ reports %>% ggplot(aes(x=log(ReportBuildTime), fill=Server)) + geom_density(alph
 ```
 
 
-```{r fig.width=7.25, fig.height=7.25}
+```{r fig.width=7.25, fig.height=7.25, cache=TRUE}
+grid.arrange(e.categorySum, e.categoryDelivery, e.categoryBuild, ncol=1, nrow=3)
+
 grid.arrange(e.hour,e.month,  ncol=2, nrow=1)
 ```
 
 
 
-```{r Dustins MLR options}
+```{r Dustins MLR options, cache=TRUE}
 
 # Basic fit: ~ 33% r^2 and 6.65 MSE
 #fit <- lm(log(ReportBuildTime)~ReportCategory + GroupCount + GroupCount*ReportCategory, data=reports)
 
 # Better fit:
-#fit <- lm(log(ReportBuildTime)~Server+Priority+GroupCount+ReportCategory+DayOfWeek+DayOfMonth+AgentCount+RptFrmt+DelivMthd+HourOfDay, data=reports)
+fit <- lm(log(ReportBuildTime)~Server+Priority+GroupCount+ReportCategory+DayOfWeek+DayOfMonth+AgentCount+RptFrmt+DelivMthd+HourOfDay, data=reports)
 
 # Better fit with interactions: (takes quite a few minutes) ~41% r^2 and 5.98s MSE
 #fit <- lm(log(ReportBuildTime)~ReportCategory + HourOfDay + GroupCount + DayOfMonth +  HourOfDay*ReportCategory + GroupCount*ReportCategory + HourOfDay*DayOfMonth + GroupCount*DayOfMonth, data=reports)
 
 # ReportId fit: (takes a few minutes)
-fit <- lm(log(ReportBuildTime)~as.factor(ReportId), data=reports) # ~79% r^2 and 2.83s MSE
-fit2 <- lm(log(ReportDeliveryTime)~as.factor(ReportId), data=reports) # ~49% r^2 and 4.5s MSE
+#fit <- lm(log(ReportBuildTime)~as.factor(ReportId), data=reports) # ~79% r^2 and 2.83s MSE
+#fit2 <- lm(log(ReportDeliveryTime)~as.factor(ReportId), data=reports) # ~49% r^2 and 4.5s MSE
 
 
 ```
 
-```{r Fit Diagnostics}
+```{r Fit Diagnostics, cache=TRUE}
 
 ########### Report Build Time Section ########### 
 summary(fit)
@@ -159,40 +170,453 @@ ggplot(preds, aes(test$ReportBuildTime, exp(p[,1]))) + geom_point() + labs (y="P
 
 ########### Report Delivery Time Section ########### 
 
-summary(fit2)
+#summary(fit2)
 
 # Make predictions & calculate MSE
-p2 <- predict(fit2, interval="predict",newdata = test)
-RMSE <- sqrt(mean((p2[,1] - log(test$ReportDeliveryTime))^2))
+#p2 <- predict(fit2, interval="predict",newdata = test)
+#RMSE <- sqrt(mean((p2[,1] - log(test$ReportDeliveryTime))^2))
 # Back transform the RMSE:
-exp(RMSE)
+#exp(RMSE)
 
 # Plot the predictions vs test data:
-preds2 <- data.frame(cbind(log(test$ReportDeliveryTime), p[,1]))
+#preds2 <- data.frame(cbind(log(test$ReportDeliveryTime), p[,1]))
 
 # raw log data:
-plot(log(test$ReportDeliveryTime), p2[,1])
+#plot(log(test$ReportDeliveryTime), p2[,1])
 
 # pretty raw log data:
-ggplot(preds2, aes(log(test$ReportDeliveryTime), p2[,1])) + geom_point() + 
-  labs (y="Predicted Log Seconds", x="Actual Log Seconds")
+#ggplot(preds2, aes(log(test$ReportDeliveryTime), p2[,1])) + geom_point() + labs (y="Predicted Log Seconds", x="Actual Log Seconds")
 
 # back transformed data: (note the outliers)
-ggplot(preds2, aes(test$ReportDeliveryTime, exp(p2[,1]))) + geom_point() + 
-  labs (y="Predicted Seconds", x="Actual Seconds")
+#ggplot(preds2, aes(test$ReportDeliveryTime, exp(p2[,1]))) + geom_point() + labs (y="Predicted Seconds", x="Actual Seconds")
 
 # Zoom in to see same scale:
-ggplot(preds2, aes(test$ReportDeliveryTime, exp(p2[,1]))) + geom_point() + 
-  labs (y="Predicted Seconds", x="Actual Seconds") + xlim(0, 20000) + ylim(0, 20000) 
+#ggplot(preds2, aes(test$ReportDeliveryTime, exp(p2[,1]))) + geom_point() + labs (y="Predicted Seconds", x="Actual Seconds") + xlim(0, 20000) + ylim(0, 20000) 
 
 
 ```
 
 
-```{r TwoWay ANOVA}
+
+
+## Addressing Objective 1:
+	Restatement of Problem and the overall approach to solve it Required
+
+### Model Selection Required
+		Type of Selection
+			Options: LASSO, RIDGE, ELASTIC NET,
+			     Stepwise, Forward, Backward, 
+		             	     Manual / Intuition,
+			     A mix of all of the above.  	
+
+### Checking Assumptions Required
+			Residual Plots
+			Influential point analysis (Cook’s D and Leverage)
+
+		Compare Competing Models Optional (Helpful if using 2 model strategy)
+			Via:  Training and test set split or CV
+                                        Possible Metrics: (ASE, AIC, BIC, adj R2, etc)
+	
+### Parameter Interpretation
+		Interpretation  Required
+		Confidence Intervals Required
+	
+### Final conclusions from the analyses of Objective 1 Required
+
+## Yang Edit Objective 1:
+
+
+
+```{r , cache=TRUE}
+reports_serv <- reports %>% filter(Server == "SQLODR6"| Server == "SQLODR2"|  Server == "SQLODR3") 
+reports_serv <- reports_serv %>% filter(TestProdIndicator == "P") 
+reports_serv_samp <- reports_serv %>% filter(ReportId == "93") 
+#reports_serv_new <- within(reports_serv_samp,
+#rm(ReportId,Priority,RptFrmt,QueuedDateTime,RenderStartDateTime,ReportStartDateTime,ReportEndDateTime, RenderEndDateTime,GroupCustom,CurrencyCode,groupSF,groupFI,ReportBuildTime,QueueTime,LagTime,Agents,TestProdIndicator,ReportBytes))
+reports_serv_new <- within(reports_serv_samp,
+rm(ReportId,Priority,RptFrmt,QueuedDateTime,RenderStartDateTime,ReportStartDateTime,ReportEndDateTime, RenderEndDateTime,GroupCustom,CurrencyCode,groupSF,groupFI,ReportBuildTime,QueueTime,LagTime,Agents,TestProdIndicator,ReportBytes,HourBinned,TimeBlock3h,TimeBlock4h,DateFrom,DateThru,queued,NumDays))
+
+
+#Drop levels of unused server names
+table(droplevels(reports_serv_new)$Server)
+reports_serv_new$Server <- factor(reports_serv_new$Server)
+levels(reports_serv_new$Server)
+
+#reports_serv_new <- reports_serv_new[-4301,]
+#reports_serv_new <- reports_serv_new[-5178,]
+#reports_serv_new <- reports_serv_new[-14441,]
+
+pairs(reports_serv_new[,-c(2,9)])
+
+all_model<-lm(ReportDeliveryTime~., data=reports_serv_new)
+summary(all_model)
+
+#par(mfrow=c(2,2))
+#plot(all_model)
+
+all_model_log<-lm(log(ReportDeliveryTime)~., data=reports_serv_new)
+summary(all_model_log)
+
+#par(mfrow=c(2,2))
+#plot(all_model_log)
 
 
 ```
+
+```{r , cache=TRUE}
+reports_serv_newlog <- reports_serv_new
+reports_serv_newlog$LogReportDelivTime = log(reports_serv_newlog$ReportDeliveryTime)
+reports_serv_newlog <- na.omit(reports_serv_newlog)
+
+reports_serv_newlog <- within(reports_serv_newlog,
+rm(ReportDeliveryTime))
+
+
+log.fwdnv20=regsubsets(LogReportDelivTime~.,data=reports_serv_newlog,method="forward",nvmax=30)
+summary(log.fwdnv20)
+summary(log.fwdnv20)$adjr2
+summary(log.fwdnv20)$rss
+summary(log.fwdnv20)$bic
+
+
+par(mfrow=c(1,3))
+bics<-summary(log.fwdnv20)$bic
+plot(1:31,bics,type="l",ylab="BIC",xlab="# of predictors")
+index<-which(bics==min(bics))
+points(index,bics[index],col="red",pch=10)
+
+adjr2<-summary(log.fwdnv20)$adjr2
+plot(1:31,adjr2,type="l",ylab="Adjusted R-squared",xlab="# of predictors")
+index<-which(adjr2==max(adjr2))
+points(index,adjr2[index],col="red",pch=10)
+
+rss<-summary(log.fwdnv20)$rss
+plot(1:31,rss,type="l",ylab="train RSS",xlab="# of predictors")
+index<-which(rss==min(rss))
+points(index,rss[index],col="red",pch=10)
+
+  
+coef(log.fwdnv20,10)
+
+log.stepnv20=regsubsets(LogReportDelivTime~.,data=reports_serv_newlog,method="seqrep",nvmax=30)
+summary(log.stepnv20)
+summary(log.stepnv20)$adjr2
+summary(log.stepnv20)$rss
+summary(log.stepnv20)$bic
+
+par(mfrow=c(1,3))
+bics<-summary(log.stepnv20)$bic
+plot(1:31,bics,type="l",ylab="BIC",xlab="# of predictors")
+index<-which(bics==min(bics))
+points(index,bics[index],col="red",pch=10)
+
+adjr2<-summary(log.stepnv20)$adjr2
+plot(1:31,adjr2,type="l",ylab="Adjusted R-squared",xlab="# of predictors")
+index<-which(adjr2==max(adjr2))
+points(index,adjr2[index],col="red",pch=10)
+
+rss<-summary(log.stepnv20)$rss
+plot(1:31,rss,type="l",ylab="train RSS",xlab="# of predictors")
+index<-which(rss==min(rss))
+points(index,rss[index],col="red",pch=10)
+
+coef(log.stepnv20,10)
+
+final.model<-lm(LogReportDelivTime~SchedFreq + HourOfDay + DayOfMonth + ReportCategory + Server,data=reports_serv_newlog)
+summary(final.model)
+
+
+```
+
+```{r , cache=TRUE}
+set.seed(1234)
+index<-sample(1:dim(reports_serv_newlog)[1],20000,replace=F)
+train<-reports_serv_newlog[index,]
+test<-reports_serv_newlog[-index,]
+
+trainlog.fwdnv30=regsubsets(LogReportDelivTime~.,data=train,method="forward",nvmax=30)
+testASE<-c()
+#note my index is to 20 since that what I set it in regsubsets
+for (i in 1:31){
+  predictions_fwd<-predict.regsubsets(object=trainlog.fwdnv30,newdata=test,id=i) 
+  testASE[i]<-mean((test$LogReportDelivTime-predictions_fwd)^2)
+}
+trainlog.stepnv30=regsubsets(LogReportDelivTime~.,data=train,method="seqrep",nvmax=30)
+
+par(mfrow=c(1,1))
+plot(1:31,testASE,type="l",xlab="# of predictors",ylab="test vs train ASE",ylim=c(0,2))
+index<-which(testASE==min(testASE))
+points(index,testASE[index],col="red",pch=10)
+rss<-summary(trainlog.stepnv30)$rss
+lines(1:31,rss/10000,lty=3,col="blue")  #Dividing by 100 since ASE=RSS/sample size
+
+RMSE_org_Fwd <- RMSE(exp(predictions_fwd), exp(test$LogReportDelivTime))
+
+testASE<-c()
+#note my index is to 20 since that what I set it in regsubsets
+for (i in 1:31){
+  predictions_step<-predict.regsubsets(object=trainlog.stepnv30,newdata=test,id=i) 
+  testASE[i]<-mean((test$LogReportDelivTime-predictions_step)^2)
+}
+par(mfrow=c(1,1))
+plot(1:31,testASE,type="l",xlab="# of predictors",ylab="test vs train ASE",ylim=c(0,2))
+index<-which(testASE==min(testASE))
+points(index,testASE[index],col="red",pch=10)
+rss<-summary(trainlog.stepnv30)$rss
+lines(1:31,rss/10000,lty=3,col="blue")  #Dividing by 100 since ASE=RSS/sample size
+
+RMSE_org_Step <- RMSE(exp(predictions_step), exp(test$LogReportDelivTime))
+
+```
+
+```{r , cache=TRUE}
+final.model.train<-lm(LogReportDelivTime~SchedFreq + HourOfDay + DayOfMonth + ReportCategory + Server,data=train)
+predictions_lm <- final.model.train %>% predict(test) %>% as.vector()
+
+RMSE_org_LM <- RMSE(exp(predictions_lm), exp(test$LogReportDelivTime))
+
+```
+
+```{r , cache=TRUE}
+#set.seed(1234)
+#index<-sample(1:dim(reports_serv_newlog)[1],20000,replace=F)
+#train<-reports_serv_newlog[index,]
+#test<-reports_serv_newlog[-index,]
+
+#Formatting data for GLM net
+x=model.matrix(LogReportDelivTime~.,train)[,-1]
+#y=log(train$ReportDeliveryTime)
+y=train$LogReportDelivTime
+
+xtest<-model.matrix(LogReportDelivTime~.,test)[,-1]
+#ytest<-log(test$ReportDeliveryTime)
+ytest<-test$LogReportDelivTime
+
+
+
+grid=10^seq(10,-2, length =100)
+lasso.mod=glmnet(x,y,alpha=1, lambda =grid)
+
+cv.out=cv.glmnet(x,y,alpha=1) #alpha=1 performs LASSO
+plot(cv.out)
+bestlambda<-cv.out$lambda.min  #Optimal penalty parameter.  You can make this call visually.
+lasso.pred=predict(lasso.mod ,s=bestlambda ,newx=xtest)
+
+testMSE_LASSO<-mean((ytest-lasso.pred)^2)
+testMSE_LASSO
+
+
+# Fit the final model on the training data
+model_lasso <- glmnet(x, y, alpha = 1, lambda = bestlambda)
+# Display regression coefficients
+coef(model_lasso)
+
+#coef(lasso.mod,s=bestlambda)
+
+# Model performance metrics
+data.frame(
+  RMSE = RMSE(lasso.pred, ytest),
+  Rsquare = R2(lasso.pred, ytest)
+)
+
+RMSE_org_LASSO <- RMSE(exp(lasso.pred), exp(ytest))
+
+# RIDGE
+cv.out.ridge=cv.glmnet(x,y,alpha=0) #alpha=1 performs RIDGE
+plot(cv.out.ridge)
+
+cv.out.ridge$lambda.min
+
+# Fit the final model on the training data
+model_ridge <- glmnet(x, y, alpha = 0, lambda = cv.out.ridge$lambda.min)
+# Display regression coefficients
+coef(model_ridge)
+
+# Make predictions on the test data
+predictions <- model_ridge %>% predict(xtest) %>% as.vector()
+
+testMSE_RIDGE<-mean((ytest-predictions)^2)
+testMSE_RIDGE
+
+plot(predictions, ytest, xlim = c(0,20), ylim = c(0,20))
+
+# Model performance metrics
+data.frame(
+  RMSE = RMSE(predictions, ytest),
+  Rsquare = R2(predictions, ytest)
+)
+
+RMSE_org_RIDGE <- RMSE(exp(predictions), exp(ytest))
+
+#Elastic net
+# Build the model using the training set
+set.seed(123)
+model_ela <- train(
+  LogReportDelivTime ~., data = train, method = "glmnet",
+  trControl = trainControl("cv", number = 10),
+  tuneLength = 10
+)
+# Best tuning parameter
+model_ela$bestTune
+
+# Coefficient of the final model. You need
+# to specify the best lambda
+coef(model_ela$finalModel, model_ela$bestTune$lambda)
+
+# Make predictions on the test data
+predictions_ela <- model_ela %>% predict(test) %>% as.vector()
+
+testMSE_ELA<-mean((ytest-predictions_ela)^2)
+testMSE_ELA
+
+
+# Model performance metrics
+data.frame(
+  RMSE = RMSE(predictions_ela, ytest),
+  Rsquare = R2(predictions_ela, ytest)
+)
+
+RMSE_org_ELA <- RMSE(exp(predictions_ela), exp(ytest))
+
+```
+
+
+In addition to overall conclusions, feel free to include additional insights or concerns gleaned from the analysis.  What needs to be done next or how could we do it better next time?  
+
+## Addressing Objective 2
+State what route you are going to take 2way ANOVA or Time series and summarize the goal.  Required
+
+
+
+### Notes on Binning HourOfDay and Filtering by server
+The HourOfDay variable is going to be binned so that we can examine the time of day as a categorical variable. This is in an effort to determine the best time of the day to run one of or schedule new reports. Servers 1 and 5 are test and development servers. Thus they do not impact the run times for production data.
+
+```{r FilterAndBin}
+reports$HourBinned <- case_when(reports$HourOfDay %in% c("06","07") ~ "0607",
+                                    reports$HourOfDay %in% c("08","09") ~ "0809",
+                                    reports$HourOfDay %in% c("10","11")~ "1011",
+                                    reports$HourOfDay %in% c("12","13")~ "1213",
+                                    reports$HourOfDay %in% c("14","15")~ "1415",
+                                    reports$HourOfDay %in% c("16","17")~ "1617",
+                                    reports$HourOfDay %in% c("18","19","20","21","22","23")~ "1823",
+                                    reports$HourOfDay %in% c("00","01","02","03","04","05")~ "0005",
+                                    TRUE~"OTHER")
+
+```
+
+## Two way Anova
+### Unlogged response variable Summary Stats and ANOVA table
+
+
+```{r UnloggedResponseSummary}
+model.fit.HrBnSrv <- aov(ReportDeliveryTime~Server+HourBinned+HourBinned:Server, data = reports)
+Anova(model.fit.HrBnSrv,type=3,singular.ok=FALSE)
+
+mysummary<-function(x){
+  result<-c(length(x),mean(x),sd(x),sd(x)/length(x))
+  names(result)<-c("N","Mean","SD","SE")
+  return(result)
+}
+sumstats<-aggregate(ReportDeliveryTime~HourBinned:Server,data=reports,mysummary)
+sumstats<-cbind(sumstats[,1:2],sumstats[,-(1:2)])
+sumstats
+
+```
+
+### Discussion
+ANOVA table does show that interaction as well as explanatory variables are significant. The summary statistics include big differences in standard deviation.
+
+### Unlogged response variable Residual plots
+
+```{r UnloggedResponseResidual}
+myfits<-data.frame(fitted.values=model.fit.HrBnSrv$fitted.values,residuals=model.fit.HrBnSrv$residuals)
+
+#Residual vs Fitted
+
+plot1<-ggplot(myfits,aes(x=fitted.values,y=residuals))+ylab("Residuals")+
+  xlab("Predicted")+geom_point()+ggtitle("Log ReportDeliveryTime Residuals")
+
+#QQ plot of residuals  #Note the diagonal abline is only good for qqplots of normal data.
+plot2<-ggplot(myfits,aes(sample=residuals))+
+  stat_qq()+geom_abline(intercept=mean(myfits$residuals), slope = sd(myfits$residuals))+
+  ggtitle("Log ReportDeliveryTime Q-Q plot")
+
+#Histogram of residuals
+plot3<-ggplot(myfits, aes(x=residuals)) + 
+  geom_histogram(aes(y=..density..),binwidth=1,color="black", fill="gray")+
+  geom_density(alpha=.1, fill="red")+
+  ggtitle("Log ReportDeliveryTime Histogram")
+
+plot1
+plot2
+# plot3 Don't run this one takes too long and we are not going to use it anyway
+```
+
+### Discussion
+The residual plots is unacceptable. The Q-Q plot demonstrates significant issues as well. A log transformation will be used to correct these problems
+
+## Two way Anova
+### Logged response variable Summary Stats and ANOVA table
+
+
+```{r loggedResponsesummary}
+reports$ReportDeliveryTimeLog <- log(reports$ReportDeliveryTime)
+
+model.fit.HrBnSrvlg <- aov(ReportDeliveryTimeLog~Server+HourBinned+HourBinned:Server, data = reports)
+Anova(model.fit.HrBnSrvlg,type=3,singular.ok=FALSE)
+
+mysummary<-function(x){
+  result<-c(length(x),mean(x),sd(x),sd(x)/length(x))
+  names(result)<-c("N","Mean","SD","SE")
+  return(result)
+}
+sumstats<-aggregate(ReportDeliveryTimeLog~HourBinned:Server,data=reports,mysummary)
+sumstats<-cbind(sumstats[,1:2],sumstats[,-(1:2)])
+sumstats
+
+```
+
+### Discussion
+ANOVA table does show that interaction as well as explanatory variables are significant, the p-value has decreased on the "server" variable. The summary statistics standard deviation is more consistent but has intersting patterns.
+
+### Logged response variable Residual plots
+
+```{r loggedResponseResidual}
+myfits<-data.frame(fitted.values=model.fit.HrBnSrvlg$fitted.values,residuals=model.fit.HrBnSrvlg$residuals)
+
+#Residual vs Fitted
+
+plot1<-ggplot(myfits,aes(x=fitted.values,y=residuals))+ylab("Residuals")+
+  xlab("Predicted")+geom_point()+ggtitle("Log ReportDeliveryTime Residuals")
+
+#QQ plot of residuals  #Note the diagonal abline is only good for qqplots of normal data.
+plot2<-ggplot(myfits,aes(sample=residuals))+
+  stat_qq()+geom_abline(intercept=mean(myfits$residuals), slope = sd(myfits$residuals))+
+  ggtitle("Log ReportDeliveryTime Q-Q plot")
+
+#Histogram of residuals
+plot3<-ggplot(myfits, aes(x=residuals)) + 
+  geom_histogram(aes(y=..density..),binwidth=1,color="black", fill="gray")+
+  geom_density(alpha=.1, fill="red")+
+  ggtitle("Log ReportDeliveryTime Histogram")
+
+plot1
+plot2
+plot3
+
+```
+
+### Discussion
+The residual plot shows definite signs of improvement. The Q-Q plot demonstrates significant issues as well. The histogram shows normal distribution
+
+
+
+### Main Analysis Content Required
+	This will depend on the route you take.  I’m leaving it open here to see what you do.
+
+### Conclusion/Discussion Required
+		The conclusion should reprise the questions and conclusions of objective 2.
+
 
 # Appendix: Features
 
@@ -328,13 +752,6 @@ reports <- left_join(reports, CustomGroups, by=c('GroupCustom' = 'CustomGroupCod
 # Capture original GroupCount
 reports$CustomGroupCount <- reports$GroupCount
 
-
-# Function to count groups for currency codes:
-getCCgroups <- function(x = c()){
-  df <- setNames(data.frame(cCode=str_split(x,','), stringsAsFactors = F),'ccode')
-  df <- inner_join(df, CurrencyCodes, by=c('ccode'='CurrencyCode'))
-  return(sum(df$GroupCount, na.rm = T))
-}
 
 # Build CurrencyCode counts: (this will take a few minutes)
 tic("CC Function")
@@ -472,313 +889,5 @@ toc()
 
 
 ```
-
-
-
-
-## Addressing Objective 1:
-	Restatement of Problem and the overall approach to solve it Required
-
-### Model Selection Required
-		Type of Selection
-			Options: LASSO, RIDGE, ELASTIC NET,
-			     Stepwise, Forward, Backward, 
-		             	     Manual / Intuition,
-			     A mix of all of the above.  	
-
-### Checking Assumptions Required
-			Residual Plots
-			Influential point analysis (Cook’s D and Leverage)
-
-		Compare Competing Models Optional (Helpful if using 2 model strategy)
-			Via:  Training and test set split or CV
-                                        Possible Metrics: (ASE, AIC, BIC, adj R2, etc)
-	
-### Parameter Interpretation
-		Interpretation  Required
-		Confidence Intervals Required
-	
-### Final conclusions from the analyses of Objective 1 Required
-
-## Yang Edit Objective 1:
-
-```{r}
-library(GGally)
-library(forcats)
-library(dplyr)
-library(leaps)
-library(glmnet)
-library(caret)
-```
-
-```{r}
-reports_serv <- reports %>% filter(Server == "SQLODR6"| Server == "SQLODR2"|  Server == "SQLODR3") 
-reports_serv <- reports_serv %>% filter(TestProdIndicator == "P") 
-reports_serv_samp <- reports_serv %>% filter(ReportId == "93") 
-#reports_serv_new <- within(reports_serv_samp,
-#rm(ReportId,Priority,RptFrmt,QueuedDateTime,RenderStartDateTime,ReportStartDateTime,ReportEndDateTime, RenderEndDateTime,GroupCustom,CurrencyCode,groupSF,groupFI,ReportBuildTime,QueueTime,LagTime,Agents,TestProdIndicator,ReportBytes))
-reports_serv_new <- within(reports_serv_samp,
-rm(ReportId,Priority,RptFrmt,QueuedDateTime,RenderStartDateTime,ReportStartDateTime,ReportEndDateTime, RenderEndDateTime,GroupCustom,CurrencyCode,groupSF,groupFI,ReportBuildTime,QueueTime,LagTime,Agents,TestProdIndicator,ReportBytes,HourBinned,TimeBlock3h,TimeBlock4h,DateFrom,DateThru,queued,NumDays))
-
-
-#Drop levels of unused server names
-table(droplevels(reports_serv_new)$Server)
-reports_serv_new$Server <- factor(reports_serv_new$Server)
-levels(reports_serv_new$Server)
-
-#reports_serv_new <- reports_serv_new[-4301,]
-#reports_serv_new <- reports_serv_new[-5178,]
-#reports_serv_new <- reports_serv_new[-14441,]
-
-pairs(reports_serv_new[,-c(2,9)])
-
-all_model<-lm(ReportDeliveryTime~., data=reports_serv_new)
-summary(all_model)
-
-#par(mfrow=c(2,2))
-#plot(all_model)
-
-all_model_log<-lm(log(ReportDeliveryTime)~., data=reports_serv_new)
-summary(all_model_log)
-
-#par(mfrow=c(2,2))
-#plot(all_model_log)
-
-
-```
-
-```{r}
-reports_serv_newlog <- reports_serv_new
-reports_serv_newlog$LogReportDelivTime = log(reports_serv_newlog$ReportDeliveryTime)
-reports_serv_newlog <- na.omit(reports_serv_newlog)
-
-reports_serv_newlog <- within(reports_serv_newlog,
-rm(ReportDeliveryTime))
-
-
-log.fwdnv20=regsubsets(LogReportDelivTime~.,data=reports_serv_newlog,method="forward",nvmax=30)
-summary(log.fwdnv20)
-summary(log.fwdnv20)$adjr2
-summary(log.fwdnv20)$rss
-summary(log.fwdnv20)$bic
-
-
-par(mfrow=c(1,3))
-bics<-summary(log.fwdnv20)$bic
-plot(1:31,bics,type="l",ylab="BIC",xlab="# of predictors")
-index<-which(bics==min(bics))
-points(index,bics[index],col="red",pch=10)
-
-adjr2<-summary(log.fwdnv20)$adjr2
-plot(1:31,adjr2,type="l",ylab="Adjusted R-squared",xlab="# of predictors")
-index<-which(adjr2==max(adjr2))
-points(index,adjr2[index],col="red",pch=10)
-
-rss<-summary(log.fwdnv20)$rss
-plot(1:31,rss,type="l",ylab="train RSS",xlab="# of predictors")
-index<-which(rss==min(rss))
-points(index,rss[index],col="red",pch=10)
-
-  
-coef(log.fwdnv20,10)
-
-log.stepnv20=regsubsets(LogReportDelivTime~.,data=reports_serv_newlog,method="seqrep",nvmax=30)
-summary(log.stepnv20)
-summary(log.stepnv20)$adjr2
-summary(log.stepnv20)$rss
-summary(log.stepnv20)$bic
-
-par(mfrow=c(1,3))
-bics<-summary(log.stepnv20)$bic
-plot(1:31,bics,type="l",ylab="BIC",xlab="# of predictors")
-index<-which(bics==min(bics))
-points(index,bics[index],col="red",pch=10)
-
-adjr2<-summary(log.stepnv20)$adjr2
-plot(1:31,adjr2,type="l",ylab="Adjusted R-squared",xlab="# of predictors")
-index<-which(adjr2==max(adjr2))
-points(index,adjr2[index],col="red",pch=10)
-
-rss<-summary(log.stepnv20)$rss
-plot(1:31,rss,type="l",ylab="train RSS",xlab="# of predictors")
-index<-which(rss==min(rss))
-points(index,rss[index],col="red",pch=10)
-
-coef(log.stepnv20,10)
-
-final.model<-lm(LogReportDelivTime~SchedFreq + HourOfDay + DayOfMonth + ReportCategory + Server,data=reports_serv_newlog)
-summary(final.model)
-
-
-```
-
-```{r}
-set.seed(1234)
-index<-sample(1:dim(reports_serv_newlog)[1],20000,replace=F)
-train<-reports_serv_newlog[index,]
-test<-reports_serv_newlog[-index,]
-
-trainlog.fwdnv30=regsubsets(LogReportDelivTime~.,data=train,method="forward",nvmax=30)
-
-testASE<-c()
-#note my index is to 20 since that what I set it in regsubsets
-for (i in 1:31){
-  predictions_fwd<-predict.regsubsets(object=trainlog.fwdnv30,newdata=test,id=i) 
-  testASE[i]<-mean((test$LogReportDelivTime-predictions_fwd)^2)
-}
-par(mfrow=c(1,1))
-plot(1:31,testASE,type="l",xlab="# of predictors",ylab="test vs train ASE",ylim=c(0,2))
-index<-which(testASE==min(testASE))
-points(index,testASE[index],col="red",pch=10)
-rss<-summary(trainlog.stepnv30)$rss
-lines(1:31,rss/10000,lty=3,col="blue")  #Dividing by 100 since ASE=RSS/sample size
-
-RMSE_org_Fwd <- RMSE(exp(predictions_fwd), exp(test$LogReportDelivTime))
-
-trainlog.stepnv30=regsubsets(LogReportDelivTime~.,data=train,method="seqrep",nvmax=30)
-
-testASE<-c()
-#note my index is to 20 since that what I set it in regsubsets
-for (i in 1:31){
-  predictions_step<-predict.regsubsets(object=trainlog.stepnv30,newdata=test,id=i) 
-  testASE[i]<-mean((test$LogReportDelivTime-predictions_step)^2)
-}
-par(mfrow=c(1,1))
-plot(1:31,testASE,type="l",xlab="# of predictors",ylab="test vs train ASE",ylim=c(0,2))
-index<-which(testASE==min(testASE))
-points(index,testASE[index],col="red",pch=10)
-rss<-summary(trainlog.stepnv30)$rss
-lines(1:31,rss/10000,lty=3,col="blue")  #Dividing by 100 since ASE=RSS/sample size
-
-RMSE_org_Step <- RMSE(exp(predictions_step), exp(test$LogReportDelivTime))
-
-```
-
-```{r}
-final.model.train<-lm(LogReportDelivTime~SchedFreq + HourOfDay + DayOfMonth + ReportCategory + Server,data=train)
-predictions_lm <- final.model.train %>% predict(test) %>% as.vector()
-
-RMSE_org_LM <- RMSE(exp(predictions_lm), exp(test$LogReportDelivTime))
-
-```
-
-```{r}
-#set.seed(1234)
-#index<-sample(1:dim(reports_serv_newlog)[1],20000,replace=F)
-#train<-reports_serv_newlog[index,]
-#test<-reports_serv_newlog[-index,]
-
-#Formatting data for GLM net
-x=model.matrix(LogReportDelivTime~.,train)[,-1]
-#y=log(train$ReportDeliveryTime)
-y=train$LogReportDelivTime
-
-xtest<-model.matrix(LogReportDelivTime~.,test)[,-1]
-#ytest<-log(test$ReportDeliveryTime)
-ytest<-test$LogReportDelivTime
-
-
-
-grid=10^seq(10,-2, length =100)
-lasso.mod=glmnet(x,y,alpha=1, lambda =grid)
-
-cv.out=cv.glmnet(x,y,alpha=1) #alpha=1 performs LASSO
-plot(cv.out)
-bestlambda<-cv.out$lambda.min  #Optimal penalty parameter.  You can make this call visually.
-lasso.pred=predict(lasso.mod ,s=bestlambda ,newx=xtest)
-
-testMSE_LASSO<-mean((ytest-lasso.pred)^2)
-testMSE_LASSO
-
-
-# Fit the final model on the training data
-model_lasso <- glmnet(x, y, alpha = 1, lambda = bestlambda)
-# Display regression coefficients
-coef(model_lasso)
-
-#coef(lasso.mod,s=bestlambda)
-
-# Model performance metrics
-data.frame(
-  RMSE = RMSE(lasso.pred, ytest),
-  Rsquare = R2(lasso.pred, ytest)
-)
-
-RMSE_org_LASSO <- RMSE(exp(lasso.pred), exp(ytest))
-
-# RIDGE
-cv.out.ridge=cv.glmnet(x,y,alpha=0) #alpha=1 performs RIDGE
-plot(cv.out.ridge)
-
-cv.out.ridge$lambda.min
-
-# Fit the final model on the training data
-model_ridge <- glmnet(x, y, alpha = 0, lambda = cv.out.ridge$lambda.min)
-# Display regression coefficients
-coef(model_ridge)
-
-# Make predictions on the test data
-predictions <- model_ridge %>% predict(xtest) %>% as.vector()
-
-testMSE_RIDGE<-mean((ytest-predictions)^2)
-testMSE_RIDGE
-
-plot(predictions, ytest, xlim = c(0,20), ylim = c(0,20))
-
-# Model performance metrics
-data.frame(
-  RMSE = RMSE(predictions, ytest),
-  Rsquare = R2(predictions, ytest)
-)
-
-RMSE_org_RIDGE <- RMSE(exp(predictions), exp(ytest))
-
-#Elastic net
-# Build the model using the training set
-set.seed(123)
-model_ela <- train(
-  LogReportDelivTime ~., data = train, method = "glmnet",
-  trControl = trainControl("cv", number = 10),
-  tuneLength = 10
-)
-# Best tuning parameter
-model_ela$bestTune
-
-# Coefficient of the final model. You need
-# to specify the best lambda
-coef(model_ela$finalModel, model_ela$bestTune$lambda)
-
-# Make predictions on the test data
-predictions_ela <- model_ela %>% predict(test) %>% as.vector()
-
-testMSE_ELA<-mean((ytest-predictions_ela)^2)
-testMSE_ELA
-
-
-# Model performance metrics
-data.frame(
-  RMSE = RMSE(predictions_ela, ytest),
-  Rsquare = R2(predictions_ela, ytest)
-)
-
-RMSE_org_ELA <- RMSE(exp(predictions_ela), exp(ytest))
-
-```
-
-
-In addition to overall conclusions, feel free to include additional insights or concerns gleaned from the analysis.  What needs to be done next or how could we do it better next time?  
-
-## Addressing Objective 2
-State what route you are going to take 2way ANOVA or Time series and summarize the goal.  Required
-
-### Main Analysis Content Required
-	This will depend on the route you take.  I’m leaving it open here to see what you do.
-
-### Conclusion/Discussion Required
-		The conclusion should reprise the questions and conclusions of objective 2.
-
-### Appendix Required
-	Well commented SAS/R Code Required
- 	Graphics and summary tables (Can be placed in the appendix or in the written report itself.)
 
 
