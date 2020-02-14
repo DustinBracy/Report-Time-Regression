@@ -38,6 +38,7 @@ reports$HourBinned <- case_when(reports$HourOfDay %in% c("06","07") ~ "0607",
 ```
 
 ## Two way Anova
+
 ### Unlogged response variable Summary Stats and ANOVA table
 
 
@@ -50,9 +51,18 @@ mysummary<-function(x){
   names(result)<-c("N","Mean","SD","SE")
   return(result)
 }
+
+servestats <-aggregate(ReportDeliveryTime~Server,data=reports,mysummary)
+servestats.df <- data.frame(servestats[,1:1],servestats[,-(1)])
+servestats.df
+
+hourstats <-aggregate(ReportDeliveryTime~HourBinned,data=reports,mysummary)
+hourstats.df <- data.frame(hourstats[,1:1],hourstats[,-(1)])
+hourstats.df
+
 sumstats<-aggregate(ReportDeliveryTime~HourBinned:Server,data=reports,mysummary)
 sumstats<-cbind(sumstats[,1:2],sumstats[,-(1:2)])
-sumstats
+head(sumstats, 30)
 
 ```
 
@@ -110,7 +120,7 @@ sumstats
 ```
 
 ### Discussion
-ANOVA table does show that interaction as well as explanatory variables are significant, the p-value has decreased on the "server" variable. The summary statistics standard deviation is more consistent but has intersting patterns.
+ANOVA table does show that is not significant. The summary statistics standard deviation is more consistent but has intersting patterns.
 
 ### Logged response variable Residual plots
 
@@ -180,4 +190,7 @@ final.result$bonf[final.result$bonf>1]<-1
 final.result
 
 ```
+
+
+
 
