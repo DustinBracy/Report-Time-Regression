@@ -152,8 +152,12 @@ We have found it best to use all parameters made available to us within the tran
 ## The Intuitive Model:
 Our EDA analysis revealed that there are several categorical variables that don’t show an apparent linear relationship with ReportDeliveryTime.  Also, we found that our response variable, ReportDeliveryTime, is heavily right skewed and likely needs a log transformation in order to continue analysis.
 
-Given some additional knowledge of the dataset, we learned that the ReportID (Specific Report) may related to the ReportBuildTime.  To explore this, we converted the ReportID to factors and conducted simple linear regression, giving us an R^2 of 0.79 which is very good, however the ReportID has over 1500 factor levels which make the explanation difficult, so we have to make other fittings and temporarily ignore ReportID.
-Some additional pre-knowledge of the dataset make us filter the dataset further: Only the 3 “working” servers are included and only the TestProdIndicator equal to”P” are preserved. Because the amount of data are very large and we don’t find a dependency of ReportID with ReportDeliveryTime, we choose a single type of report “ReportID=93”, which is roughly 1/10 of the overall dataset as a representative subset and use it for later analysis.
+Given some additional knowledge of the dataset, we learned that only three production servers are useful for prediction (SQLODR2, SQLODR3 and SQLODR6) and that the ReportID (Specific Report) may be related to ReportBuildTime.  To explore this, we converted the ReportID to factors and conducted simple linear regression, giving us an R^2 of 0.79 which is very good, however the ReportID has over 1500 factor levels which make the explanation difficult when introducing additional features, so we continued to explore other features and temporarily ignore ReportID.
+
+
+(TODO)
+
+Because the amount of data is very large and we don’t find a dependency of ReportID with ReportDeliveryTime, we choose a single type of report “ReportID=93”, which is roughly 1/10 of the overall dataset as a representative subset and use it for later analysis.
 
 With this subset, we filtered out a few more parameters and the left 10 parameters for fittings are: Server, ReportCategory, SchedFreq, HourOfDay, DayOfMonth, ReportCategory,Server, AgentCount, GroupCount,DelivMethod. First we did a fit with all parameters and get a resulted R^2 of 0.36. It was not too bad.
 
@@ -166,7 +170,22 @@ With this subset, we filtered out a few more parameters and the left 10 paramete
 		             	     Manual / Intuition,
 			     A mix of all of the above.  	
 
-### Checking Assumptions Required
+## Checking Assumptions
+Linear Regression analysis has basic assumptions of residual normality, linearity of features, constant variance (equal spread), and independence of observations.
+
+The q-q plot below (and previous histogram) shows that the assumption of normality may be violated so we do need to log transform our response variables.  We confirmed this to be correct by fitting a new model after log transformation were performed. 
+
+After transofrmation we observed the q-q plot to exhbit qualities indicating the data is approximately normal: a mostly straight line following closely to the residual 0 line. 
+
+```{r Obj1 Assumptions}
+
+```
+
+
+
+
+
+
 			Residual Plots
 			Influential point analysis (Cook’s D and Leverage)
 
@@ -180,6 +199,7 @@ With this subset, we filtered out a few more parameters and the left 10 paramete
 	
 ## Conclusion
 In conclusion, the mulit-linear model with 5 predictors leveraging a logged response gave the best MSE with avoidance of overfitting. We used a train and test split to validate the MSE across many method and reach this conclusion.
+
 
 ```{r , cache=TRUE}
 reports_serv <- reports %>% filter(Server == "SQLODR6"| Server == "SQLODR2"|  Server == "SQLODR3") 
@@ -447,20 +467,9 @@ State what route you are going to take 2way ANOVA or Time series and summarize t
 ### Notes on Binning HourOfDay and Filtering by server
 The HourOfDay variable is going to be binned so that we can examine the time of day as a categorical variable. This is in an effort to determine the best time of the day to run one of or schedule new reports. Servers 1 and 5 are test and development servers. Thus they do not impact the run times for production data.
 
-```{r FilterAndBin}
-reports$HourBinned <- case_when(reports$HourOfDay %in% c("06","07") ~ "0607",
-                                    reports$HourOfDay %in% c("08","09") ~ "0809",
-                                    reports$HourOfDay %in% c("10","11")~ "1011",
-                                    reports$HourOfDay %in% c("12","13")~ "1213",
-                                    reports$HourOfDay %in% c("14","15")~ "1415",
-                                    reports$HourOfDay %in% c("16","17")~ "1617",
-                                    reports$HourOfDay %in% c("18","19","20","21","22","23")~ "1823",
-                                    reports$HourOfDay %in% c("00","01","02","03","04","05")~ "0005",
-                                    TRUE~"OTHER")
-
-```
 
 ## Two way Anova
+
 ### Unlogged response variable Summary Stats and ANOVA table
 
 
@@ -468,14 +477,17 @@ reports$HourBinned <- case_when(reports$HourOfDay %in% c("06","07") ~ "0607",
 model.fit.HrBnSrv <- aov(ReportDeliveryTime~Server+HourBinned+HourBinned:Server, data = reports)
 Anova(model.fit.HrBnSrv,type=3,singular.ok=FALSE)
 
-mysummary<-function(x){
-  result<-c(length(x),mean(x),sd(x),sd(x)/length(x))
-  names(result)<-c("N","Mean","SD","SE")
-  return(result)
-}
+servestats <-aggregate(ReportDeliveryTime~Server,data=reports,mysummary)
+servestats.df <- data.frame(servestats[,1:1],servestats[,-(1)])
+servestats.df
+
+hourstats <-aggregate(ReportDeliveryTime~HourBinned,data=reports,mysummary)
+hourstats.df <- data.frame(hourstats[,1:1],hourstats[,-(1)])
+hourstats.df
+
 sumstats<-aggregate(ReportDeliveryTime~HourBinned:Server,data=reports,mysummary)
 sumstats<-cbind(sumstats[,1:2],sumstats[,-(1:2)])
-sumstats
+head(sumstats, 30)
 
 ```
 
@@ -521,11 +533,6 @@ reports$ReportDeliveryTimeLog <- log(reports$ReportDeliveryTime)
 model.fit.HrBnSrvlg <- aov(ReportDeliveryTimeLog~Server+HourBinned+HourBinned:Server, data = reports)
 Anova(model.fit.HrBnSrvlg,type=3,singular.ok=FALSE)
 
-mysummary<-function(x){
-  result<-c(length(x),mean(x),sd(x),sd(x)/length(x))
-  names(result)<-c("N","Mean","SD","SE")
-  return(result)
-}
 sumstats<-aggregate(ReportDeliveryTimeLog~HourBinned:Server,data=reports,mysummary)
 sumstats<-cbind(sumstats[,1:2],sumstats[,-(1:2)])
 sumstats
@@ -533,7 +540,7 @@ sumstats
 ```
 
 ### Discussion
-ANOVA table does show that interaction as well as explanatory variables are significant, the p-value has decreased on the "server" variable. The summary statistics standard deviation is more consistent but has intersting patterns.
+ANOVA table does show that is not significant. The summary statistics standard deviation is more consistent but has intersting patterns.
 
 ### Logged response variable Residual plots
 
@@ -564,6 +571,45 @@ plot3
 
 ### Discussion
 The residual plot shows definite signs of improvement. The Q-Q plot demonstrates significant issues as well. The histogram shows normal distribution
+
+### To Do Contrasts
+
+```{r ContrastsHours}
+TukeyHSD(model.fit.HrBnSrvlg,"HourBinned",conf.level=.95)
+
+contrast.factor<-~HourBinned
+mycontrast<-c("1415-1011","1823-1617")
+dat<-reports
+
+
+final.result<-c()
+for( j in 1:length(mycontrast)){
+  contrast.factor.names<-gsub(" ", "", unlist(strsplit(as.character(contrast.factor),split = "*", fixed = T))[-1])
+  contrast.factor.2 <- vector("list", length(contrast.factor.names))
+  for (i in 1:length(contrast.factor.names)) {
+    contrast.factor.2[[i]] <- levels(dat[, contrast.factor.names[i]])
+  }
+  new.factor.levels <- do.call(paste, c(do.call(expand.grid, contrast.factor.2), sep = ""))
+  temp.cont<-mycontrast[j]
+  contrast2 <- list(comparison = as.vector(do.call(makeContrasts, list(contrasts = temp.cont, levels = new.factor.levels))))
+  contrast.result <- summary(contrast(lsmeans(model.fit, contrast.factor), contrast2, by = NULL))
+  final.result<-rbind(final.result,contrast.result)
+}
+
+#Cleaning up and applying bonferroni correction to the number
+#of total comparisons investigated.
+final.result$contrast<-mycontrast
+final.result$bonf<-length(mycontrast)*final.result$p.value
+final.result$bonf[final.result$bonf>1]<-1
+
+final.result
+
+```
+
+
+
+
+
 
 
 
@@ -894,7 +940,7 @@ reports %>% ggplot(aes(x=log(ReportBuildTime), fill=Server)) + geom_density(alph
 ```
 
 
-```{r EDA plots2 fig.width=7.25, fig.height=7.25, cache=TRUE}
+```{r EDA plots2, fig.width=7.25, fig.height=7.25, cache=TRUE}
 grid.arrange(e.categorySum, e.categoryDelivery, e.categoryBuild, ncol=1, nrow=3)
 
 grid.arrange(e.hour,e.month,  ncol=2, nrow=1)
