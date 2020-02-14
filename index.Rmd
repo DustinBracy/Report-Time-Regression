@@ -500,6 +500,270 @@ toc()
 	
 ### Final conclusions from the analyses of Objective 1 Required
 
+## Yang Edit Objective 1:
+
+```{r}
+library(GGally)
+library(forcats)
+library(dplyr)
+library(leaps)
+library(glmnet)
+library(caret)
+```
+
+```{r}
+reports_serv <- reports %>% filter(Server == "SQLODR6"| Server == "SQLODR2"|  Server == "SQLODR3") 
+reports_serv <- reports_serv %>% filter(TestProdIndicator == "P") 
+reports_serv_samp <- reports_serv %>% filter(ReportId == "93") 
+#reports_serv_new <- within(reports_serv_samp,
+#rm(ReportId,Priority,RptFrmt,QueuedDateTime,RenderStartDateTime,ReportStartDateTime,ReportEndDateTime, RenderEndDateTime,GroupCustom,CurrencyCode,groupSF,groupFI,ReportBuildTime,QueueTime,LagTime,Agents,TestProdIndicator,ReportBytes))
+reports_serv_new <- within(reports_serv_samp,
+rm(ReportId,Priority,RptFrmt,QueuedDateTime,RenderStartDateTime,ReportStartDateTime,ReportEndDateTime, RenderEndDateTime,GroupCustom,CurrencyCode,groupSF,groupFI,ReportBuildTime,QueueTime,LagTime,Agents,TestProdIndicator,ReportBytes,HourBinned,TimeBlock3h,TimeBlock4h,DateFrom,DateThru,queued,NumDays))
+
+
+#Drop levels of unused server names
+table(droplevels(reports_serv_new)$Server)
+reports_serv_new$Server <- factor(reports_serv_new$Server)
+levels(reports_serv_new$Server)
+
+#reports_serv_new <- reports_serv_new[-4301,]
+#reports_serv_new <- reports_serv_new[-5178,]
+#reports_serv_new <- reports_serv_new[-14441,]
+
+pairs(reports_serv_new[,-c(2,9)])
+
+all_model<-lm(ReportDeliveryTime~., data=reports_serv_new)
+summary(all_model)
+
+#par(mfrow=c(2,2))
+#plot(all_model)
+
+all_model_log<-lm(log(ReportDeliveryTime)~., data=reports_serv_new)
+summary(all_model_log)
+
+#par(mfrow=c(2,2))
+#plot(all_model_log)
+
+
+```
+
+```{r}
+reports_serv_newlog <- reports_serv_new
+reports_serv_newlog$LogReportDelivTime = log(reports_serv_newlog$ReportDeliveryTime)
+reports_serv_newlog <- na.omit(reports_serv_newlog)
+
+reports_serv_newlog <- within(reports_serv_newlog,
+rm(ReportDeliveryTime))
+
+
+log.fwdnv20=regsubsets(LogReportDelivTime~.,data=reports_serv_newlog,method="forward",nvmax=30)
+summary(log.fwdnv20)
+summary(log.fwdnv20)$adjr2
+summary(log.fwdnv20)$rss
+summary(log.fwdnv20)$bic
+
+
+par(mfrow=c(1,3))
+bics<-summary(log.fwdnv20)$bic
+plot(1:31,bics,type="l",ylab="BIC",xlab="# of predictors")
+index<-which(bics==min(bics))
+points(index,bics[index],col="red",pch=10)
+
+adjr2<-summary(log.fwdnv20)$adjr2
+plot(1:31,adjr2,type="l",ylab="Adjusted R-squared",xlab="# of predictors")
+index<-which(adjr2==max(adjr2))
+points(index,adjr2[index],col="red",pch=10)
+
+rss<-summary(log.fwdnv20)$rss
+plot(1:31,rss,type="l",ylab="train RSS",xlab="# of predictors")
+index<-which(rss==min(rss))
+points(index,rss[index],col="red",pch=10)
+
+  
+coef(log.fwdnv20,10)
+
+log.stepnv20=regsubsets(LogReportDelivTime~.,data=reports_serv_newlog,method="seqrep",nvmax=30)
+summary(log.stepnv20)
+summary(log.stepnv20)$adjr2
+summary(log.stepnv20)$rss
+summary(log.stepnv20)$bic
+
+par(mfrow=c(1,3))
+bics<-summary(log.stepnv20)$bic
+plot(1:31,bics,type="l",ylab="BIC",xlab="# of predictors")
+index<-which(bics==min(bics))
+points(index,bics[index],col="red",pch=10)
+
+adjr2<-summary(log.stepnv20)$adjr2
+plot(1:31,adjr2,type="l",ylab="Adjusted R-squared",xlab="# of predictors")
+index<-which(adjr2==max(adjr2))
+points(index,adjr2[index],col="red",pch=10)
+
+rss<-summary(log.stepnv20)$rss
+plot(1:31,rss,type="l",ylab="train RSS",xlab="# of predictors")
+index<-which(rss==min(rss))
+points(index,rss[index],col="red",pch=10)
+
+coef(log.stepnv20,10)
+
+final.model<-lm(LogReportDelivTime~SchedFreq + HourOfDay + DayOfMonth + ReportCategory + Server,data=reports_serv_newlog)
+summary(final.model)
+
+
+```
+
+```{r}
+set.seed(1234)
+index<-sample(1:dim(reports_serv_newlog)[1],20000,replace=F)
+train<-reports_serv_newlog[index,]
+test<-reports_serv_newlog[-index,]
+
+trainlog.fwdnv30=regsubsets(LogReportDelivTime~.,data=train,method="forward",nvmax=30)
+
+testASE<-c()
+#note my index is to 20 since that what I set it in regsubsets
+for (i in 1:31){
+  predictions_fwd<-predict.regsubsets(object=trainlog.fwdnv30,newdata=test,id=i) 
+  testASE[i]<-mean((test$LogReportDelivTime-predictions_fwd)^2)
+}
+par(mfrow=c(1,1))
+plot(1:31,testASE,type="l",xlab="# of predictors",ylab="test vs train ASE",ylim=c(0,2))
+index<-which(testASE==min(testASE))
+points(index,testASE[index],col="red",pch=10)
+rss<-summary(trainlog.stepnv30)$rss
+lines(1:31,rss/10000,lty=3,col="blue")  #Dividing by 100 since ASE=RSS/sample size
+
+RMSE_org_Fwd <- RMSE(exp(predictions_fwd), exp(test$LogReportDelivTime))
+
+trainlog.stepnv30=regsubsets(LogReportDelivTime~.,data=train,method="seqrep",nvmax=30)
+
+testASE<-c()
+#note my index is to 20 since that what I set it in regsubsets
+for (i in 1:31){
+  predictions_step<-predict.regsubsets(object=trainlog.stepnv30,newdata=test,id=i) 
+  testASE[i]<-mean((test$LogReportDelivTime-predictions_step)^2)
+}
+par(mfrow=c(1,1))
+plot(1:31,testASE,type="l",xlab="# of predictors",ylab="test vs train ASE",ylim=c(0,2))
+index<-which(testASE==min(testASE))
+points(index,testASE[index],col="red",pch=10)
+rss<-summary(trainlog.stepnv30)$rss
+lines(1:31,rss/10000,lty=3,col="blue")  #Dividing by 100 since ASE=RSS/sample size
+
+RMSE_org_Step <- RMSE(exp(predictions_step), exp(test$LogReportDelivTime))
+
+```
+
+```{r}
+final.model.train<-lm(LogReportDelivTime~SchedFreq + HourOfDay + DayOfMonth + ReportCategory + Server,data=train)
+predictions_lm <- final.model.train %>% predict(test) %>% as.vector()
+
+RMSE_org_LM <- RMSE(exp(predictions_lm), exp(test$LogReportDelivTime))
+
+```
+
+```{r}
+#set.seed(1234)
+#index<-sample(1:dim(reports_serv_newlog)[1],20000,replace=F)
+#train<-reports_serv_newlog[index,]
+#test<-reports_serv_newlog[-index,]
+
+#Formatting data for GLM net
+x=model.matrix(LogReportDelivTime~.,train)[,-1]
+#y=log(train$ReportDeliveryTime)
+y=train$LogReportDelivTime
+
+xtest<-model.matrix(LogReportDelivTime~.,test)[,-1]
+#ytest<-log(test$ReportDeliveryTime)
+ytest<-test$LogReportDelivTime
+
+
+
+grid=10^seq(10,-2, length =100)
+lasso.mod=glmnet(x,y,alpha=1, lambda =grid)
+
+cv.out=cv.glmnet(x,y,alpha=1) #alpha=1 performs LASSO
+plot(cv.out)
+bestlambda<-cv.out$lambda.min  #Optimal penalty parameter.  You can make this call visually.
+lasso.pred=predict(lasso.mod ,s=bestlambda ,newx=xtest)
+
+testMSE_LASSO<-mean((ytest-lasso.pred)^2)
+testMSE_LASSO
+
+
+# Fit the final model on the training data
+model_lasso <- glmnet(x, y, alpha = 1, lambda = bestlambda)
+# Display regression coefficients
+coef(model_lasso)
+
+#coef(lasso.mod,s=bestlambda)
+
+# Model performance metrics
+data.frame(
+  RMSE = RMSE(lasso.pred, ytest),
+  Rsquare = R2(lasso.pred, ytest)
+)
+
+RMSE_org_LASSO <- RMSE(exp(lasso.pred), exp(ytest))
+
+# RIDGE
+cv.out.ridge=cv.glmnet(x,y,alpha=0) #alpha=1 performs RIDGE
+plot(cv.out.ridge)
+
+cv.out.ridge$lambda.min
+
+# Fit the final model on the training data
+model_ridge <- glmnet(x, y, alpha = 0, lambda = cv.out.ridge$lambda.min)
+# Display regression coefficients
+coef(model_ridge)
+
+# Make predictions on the test data
+predictions <- model_ridge %>% predict(xtest) %>% as.vector()
+
+testMSE_RIDGE<-mean((ytest-predictions)^2)
+testMSE_RIDGE
+
+plot(predictions, ytest, xlim = c(0,20), ylim = c(0,20))
+
+# Model performance metrics
+data.frame(
+  RMSE = RMSE(predictions, ytest),
+  Rsquare = R2(predictions, ytest)
+)
+
+RMSE_org_RIDGE <- RMSE(exp(predictions), exp(ytest))
+
+#Elastic net
+# Build the model using the training set
+set.seed(123)
+model_ela <- train(
+  LogReportDelivTime ~., data = train, method = "glmnet",
+  trControl = trainControl("cv", number = 10),
+  tuneLength = 10
+)
+# Best tuning parameter
+model_ela$bestTune
+
+# Coefficient of the final model. You need
+# to specify the best lambda
+coef(model_ela$finalModel, model_ela$bestTune$lambda)
+
+# Make predictions on the test data
+predictions_ela <- model_ela %>% predict(test) %>% as.vector()
+
+testMSE_ELA<-mean((ytest-predictions_ela)^2)
+testMSE_ELA
+
+
+# Model performance metrics
+data.frame(
+  RMSE = RMSE(predictions_ela, ytest),
+  Rsquare = R2(predictions_ela, ytest)
+)
+
+RMSE_org_ELA <- RMSE(exp(predictions_ela), exp(ytest))
+
+```
 
 
 In addition to overall conclusions, feel free to include additional insights or concerns gleaned from the analysis.  What needs to be done next or how could we do it better next time?  
