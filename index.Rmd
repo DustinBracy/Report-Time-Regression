@@ -61,13 +61,23 @@ Gilsbar has provided report data spanning a 12 month period from January 2019 th
 We'd like to tackle these questions using two separate models for interpretation.  For our first objective, we use Multiple Linear Regression techniques to predict runtime using several of the report metrics and features.  As our second objective, we will utilize two-way ANOVA techniques to compare ReportDeliveryTime vs Server, Report Category, and Report Format.
 
 # Exploratory Data Analysis
+Our EDA resulted in the following observations:
+* Submission times are most often 6am, with 9am and 6pm as secondary peak times.
+* The first day of Month is peak report day
+* Scheuled frequencies occur more often by Weekly, One-time, Monthly respectively.
+* Reinsurance reports grossly exceed delivery times of all other reports, PL reports deliver fastest.
+* Extract reports take the longest for servers to build, with miscellaneous building quickest.
+* Finance/Billing and Eligibility reports outnumber others, and PL reports are run the least.(Note: PL Category is newest, so does not contain a full year worth of data).
+* Most reports utilize Delivery Method: Web. 
+* Production reports far outnumber test reports.
+* 3 Servers processed most reports are SQLODR2, SQLODR3, SQLODR6.
+* SQLODR2, SQLODR3, and SQLODR6 are all marked as production, while the others are marked as test.
+* Popular Report formats are CSV/PDF followed by TXT/EXCEL.
+* Reports are genereated more on WeekDays with most occuring on Monday/Tuesday.
+* Priorities only have 0.1, 2, 3, and 10, with 10 as the majority.
+* SQLODR3 processes less reports than SQLODR2 or SQLODR6, and also appears to have a longer mean build time (i.e. worse performance) than the other two production servers.
 
-
-(TODO)
-
-
-
-```{r Dustins MLR options, cache=TRUE}
+```{r Dustins MLR options, include=FALSE, cache=TRUE}
 
 # Basic fit: ~ 33% r^2 and 6.65 MSE
 #fit <- lm(log(ReportBuildTime)~ReportCategory + GroupCount + GroupCount*ReportCategory, data=reports)
@@ -85,7 +95,7 @@ fit <- lm(log(ReportBuildTime)~Server+Priority+GroupCount+ReportCategory+DayOfWe
 
 ```
 
-```{r Fit Diagnostics, cache=TRUE}
+```{r Fit Diagnostics, cache=TRUE, include=FALSE}
 
 ########### Report Build Time Section ########### 
 summary(fit)
@@ -145,7 +155,7 @@ ggplot(preds, aes(test$ReportBuildTime, exp(p[,1]))) + geom_point() + labs (y="P
 ```
 
 # Objective 1:
-Using known parameters of a desired report, can we predict how long it will take to run a particular report? 
+Using known parameters of a desired report, can we predict how long it will take to run a particular type of report? 
 
 We have found it best to use all parameters made available to us within the transformed 'reports' dataset to fit the response variable “ReportDeliveryTime.”  Within the report, intuition tells us a few key parameters contribute strongly to the delivery time.  For example: ReportBuildTime, QueueTime, LagTime and ReportBytes, cannot be used because they are all unknown before report completion. 
 
@@ -153,6 +163,7 @@ We have found it best to use all parameters made available to us within the tran
 Our EDA analysis revealed that there are several categorical variables that don’t show an apparent linear relationship with ReportDeliveryTime.  Also, we found that our response variable, ReportDeliveryTime, is heavily right skewed and likely needs a log transformation in order to continue analysis.
 
 Given some additional knowledge of the dataset, we learned that only three production servers are useful for prediction (SQLODR2, SQLODR3 and SQLODR6) and that the ReportID (Specific Report) may be related to ReportBuildTime.  To explore this, we converted the ReportID to factors and conducted simple linear regression, giving us an R^2 of 0.79 which is very good, however the ReportID has over 1500 factor levels which make the explanation difficult when introducing additional features, so we continued to explore other features and temporarily ignore ReportID.
+
 
 
 (TODO)
@@ -202,9 +213,7 @@ In conclusion, the mulit-linear model with 5 predictors leveraging a logged resp
 
 
 ```{r , cache=TRUE}
-reports_serv <- reports %>% filter(Server == "SQLODR6"| Server == "SQLODR2"|  Server == "SQLODR3") 
-reports_serv <- reports_serv %>% filter(TestProdIndicator == "P") 
-reports_serv_samp <- reports_serv %>% filter(ReportId == "93") 
+reports_serv_samp <- reports %>% filter(ReportId == "93") 
 #reports_serv_new <- within(reports_serv_samp,
 #rm(ReportId,Priority,RptFrmt,QueuedDateTime,RenderStartDateTime,ReportStartDateTime,ReportEndDateTime, RenderEndDateTime,GroupCustom,CurrencyCode,groupSF,groupFI,ReportBuildTime,QueueTime,LagTime,Agents,TestProdIndicator,ReportBytes))
 reports_serv_new <- within(reports_serv_samp,
