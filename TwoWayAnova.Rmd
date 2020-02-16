@@ -158,19 +158,20 @@ sumstats.log.fltr<-cbind(sumstats.log.fltr[,1:2],sumstats.log.fltr[,-(1:2)])
 
 The HourBinned variable does display some differences in standard deviation. This issue is examined below. Please note that the over night and late evening hours were dropped from the model.
 
-	The difference in standard deviation between the various groups is concerning. On-line research yielded the following article https://link.springer.com/article/10.3758/s13428-017-0918-2?shared-article-renderer#Tab6 . The article indicates that a useful measure of unequal variance is the Variance ratio. This ratio is simply the largest group variance divided by the smallest group variance. Looking at the summary statistics table for hours binned we find that:
-Variance Ratio=  (σ_max )^2/(σ_min )^2 =  〖2.84〗^2/〖1.20〗^2 =5.6
-The correlation between the sample size and variance is -0.81. The coefficient of sample size variation (Δn) was calculated to be (SD(Group Sample Size))/(mean(Group Sample Size))=0.932
+	The difference in standard deviation between the various groups is concerning. On-line research yielded the following article https://link.springer.com/article/10.3758/s13428-017-0918-2?shared-article-renderer#Tab6 . The article indicates that a useful measure of unequal variance is the Variance ratio. This ratio is simply the largest group variance divided by the smallest group variance. Looking at the summary statistics table for hours binned we find that:  
+Variance Ratio=  (σ_max )^2/(σ_min )^2 =  〖2.84〗^2/〖1.20〗^2 =5.6  
+The correlation between the sample size and variance is -0.81.  
+The coefficient of sample size variation (Δn) was calculated to be (SD(Group Sample Size))/(mean(Group Sample Size))=0.932  
 According to the article’s conclusions with the parameters as calculated highlighted below (Table 10 of the article) the Type I error ratio will be liberal. However, most p-values reported by the two-way ANOVA are very small. The effects of unequal sample size and unequal variance within the sample groups should only affect relatively few term pairings. Assume p-values can be as much as four times larger than the given value. 
 Variance ratio	Pairing	Coefficient of sample size variation	Type I error rate
-1.6, 1.7, 1.8	+ or −1	0.50	Liberal
-2	−1	0.33; 0.50	Liberal
-3	1	0.50	Conservative
- 	−.50	0.50	Liberal
- 	−1	0.33; 0.50	Liberal
-5 & 9	1	0.50	Conservative
- 	−.50	0.33; 0.50	Liberal
- 	−1	0.16; 0.33; 0.50	Liberal
+1.6, 1.7, 1.8	+ or −1	0.50	Liberal  
+2	−1	0.33; 0.50	Liberal  
+3	1	0.50	Conservative  
+ 	−.50	0.50	Liberal  
+ 	−1	0.33; 0.50	Liberal  
+**5** & 9	1	0.50	Conservative  
+ 	−.50	0.33; 0.50	Liberal  
+ 	**−1	0.16; 0.33; 0.50	Liberal**  
 
 The following graph shows that the mean log of the delivery time varies by the time of day and has a different standard deviation during times of high loads. 
 
@@ -225,13 +226,32 @@ TukSrvHrB <- TukeyHSD(model.fit.HrBnSrvlg,"Server:HourBinned",conf.level=.95)
 
 TukSrv[1]
 TukHrB[1]
+#TukSrvHrB[1]
 ```
 
 Conclusion and discussion
-	The business asked that we determine on what server and at what time of day additional reports should run. Due to the residual and Q-Q plot of the untransformed data it was found to be necessary to perform a log transform of the response data. The data responded well to the transformation displaying all the characteristics of normalized data.
+	The business asked that we determine what are the best and worst times to run a report?  And is there a difference in performance between servers. Due to the residual and Q-Q plot of the untransformed data it was found to be necessary to perform a log transform of the response data. The data responded well to the transformation displaying all the characteristics of normalized data.
 Using the table “Mean logged response of reports ran by time of day per server” above we can make the following recommendations.
-•	The number of reports run on server “SQLODR03” is about 20 % less than the other two servers. However, at most it has only 18% faster mean report delivery time(95% CI[5.3% - 32%]) this is between server “SQLODR03” and “SQLODR6” for the 10 AM through noon time period
-•	The time period 6 AM to 8 AM has the highest mean report delivery time, followed by 8 AM to 10 AM and 6 PM to 8 pm. Every effort should be made to not schedule new reports during these time frames.
-•	The time period noon to 2 PM has the lowest mean report delivery time, thus if possible new reports should be added there. The relative loading of the servers is as follows. Server “SQLODR02” has a 48% greater mean report delivery time (95% CI[31%, 68%]) than server”SQLODR06” for that time frame. While server “SQLODR3” has a 27% greater mean report delivery time (95% CI[11% , 44%]) than server ”SQLODR06”. Server ”SQLODR06” is the lightest loaded server as measured by mean report delivery time during the noon to 2PM time frame.
-•	The very late evening hours 8PM to midnight remain an option for scheduling reports. Care must be taken that any reports scheduled during that time do not run past midnight into the maintenance window.
+*	The number of reports run on server “SQLODR03” is about 20 % less than the other two servers. However, at most it has only 18.1% faster mean report delivery time(95% CI[5.3% , 32.4%]) this is between server “SQLODR03” and “SQLODR6” for the 10 AM through noon time period  
+*	The time period 6 AM to 8 AM has the highest mean report delivery time, followed by 8 AM to 10 AM and 6 PM to 8 pm. Every effort should be made to not schedule new reports during these time frames.  
+*	The time period noon to 2 PM has the lowest mean report delivery time, thus if possible new reports should be added there. The relative loading of the servers is as follows. Server “SQLODR02” has a 48.2% greater mean report delivery time (95% CI[30.7%, 68.1%]) than server”SQLODR06” for that time frame. While server “SQLODR3” has a 26.6% greater mean report delivery time (95% CI[11.2% , 44.2%]) than server ”SQLODR06”. Server ”SQLODR06” is the lightest loaded server as measured by mean report delivery time during the noon to 2PM time frame.  
+*	The very late evening hours 8PM to midnight remain an option for scheduling reports. Care must be taken that any reports scheduled during that time do not run past midnight into the maintenance window.  
 
+```{r PredictionAndInterval}
+ConvertPercent<-function(x){
+  result<-(exp(x)-1)*100
+  return(result)
+}
+# these results are from running "TukSrvHrB[1]" They are used to create the first and third conclusions bullet points
+# SQLODR6:1011-SQLODR3:1011  0.166238080  0.051624515  0.2808516453 4.582670e-05
+# SQLODR6:1213-SQLODR2:1213 -0.393465747 -0.519129805 -0.2678016889 5.595524e-14
+# SQLODR6:1213-SQLODR3:1213 -0.236003508 -0.365704833 -0.1063021836 1.748803e-08
+
+z <- c(0.166238080,  0.051624515,  0.2808516453)
+
+z <- c(0.393465747, 0.519129805, 0.2678016889)
+z <- c(0.236003508, 0.365704833, 0.1063021836)
+
+ConvertPercent(z)
+
+```
