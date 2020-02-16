@@ -29,7 +29,9 @@ library(car)
 library(limma)
 library(lsmeans)
 library(magick)
+library(pander)
 #options(kableExtra.auto_format = FALSE)
+#options(knitr.table.format = 'latex')
 # import report data:
 load("./data/reports.RData")
 
@@ -450,22 +452,24 @@ The logged variables need to be transformed back from their log in order to be p
 
 The confidence intervals for the parameter estimates are in the table below. The confidence intervals show that all the listed variables don’t contain zero at the 95% level. This indicates that we can reject the null hypothesis and say that these estimates are significantly different from zero.
 
+The coefficients and a 95% confidence interval are included in the tables below:
 
-
-```{r Obj1 Final Model Selection, cache=TRUE, echo=FALSE, warning=FALSE, fig.height=9}
+```{r Obj1 Final Model Selection, cache=FALSE, echo=FALSE, warning=FALSE, fig.height=9}
 final.model<-lm(LogReportDelivTime~SchedFreq + HourOfDay + DayOfMonth + ReportCategory + Server,data=reports_serv_newlog)
 #summary(final.model)$adj.r.squared
 
 # Output final coefficients
-
 finalDF <- cbind(data.frame(coef(final.model)), confint(final.model))
 
-as_image(kable_styling(kable(finalDF)), file = './img/final.png', height=9, width = 4)
+# Format in two tables:
+as_image(kable_styling(kable(head(finalDF, 28))), file = './img/final1.png')
+as_image(kable_styling(kable(tail(finalDF, 25))), file = './img/final2.png')
 
 final.model.train<-lm(LogReportDelivTime~SchedFreq + HourOfDay + DayOfMonth + ReportCategory + Server,data=train)
 predictions_lm <- final.model.train %>% predict(test) %>% as.vector()
 
 RMSE_org_LM <- RMSE(exp(predictions_lm), exp(test$LogReportDelivTime))
+
 ```
 
 
@@ -484,28 +488,26 @@ __Our question of interest from Gilsbar is which server, and what time of day yi
 
 We ran a two-way ANOVA on the data to satisfy the second objective. The business requirements drove the selection of the explanatory variables. The business wants to know what time of day and on which server new reports should be added based upon current report run times as expressed by the ReportDeliveryTime response variable.
 
-### Explanatory and Response variable creation	
+## Explanatory Data Analysis of Server and HourBinned Variables
 
 The two explanatory variables require some explanation. The “server” variable required us to remove the data associated with testing and development servers. The testing and development report run times have very different characteristics than production data. Thus, all data associated with servers “SQLODR1” and “SQLODR5” were removed.
 
-“HourBinned” variable indicates the time of day the report ran. Several things should be noted about it. A maintenance window exists every night between the hours of midnight and six AM. Only a few reports run during this maintenance window. Likewise, relatively few reports run during the late evening hours between eight PM and midnight. We binned these two time periods separately. The remaining time during the days was binned in two-hour blocks. The summary tables below give counts and means of the various bins.
-
-```{r FilterAndBin, cache=TRUE, include=FALSE}
+```{r FilterAndBin, cache=FALSE, echo=FALSE}
 
 servestats <-aggregate(ReportDeliveryTime~Server,data=reports,mysummary)
 servestats.df <- data.frame(servestats[,1:1],servestats[,-(1)])
-servestats.df
+pander(servestats.df)
 ```
 
 The table above shows that server “SQLODR3” runs fewer reports than the other two servers and has differences in mean report run time and standard deviation.
 
-### Server Performance Analysis
+“HourBinned” variable indicates the time of day the report ran. Several things should be noted about it. A maintenance window exists every night between the hours of midnight and six AM. Only a few reports run during this maintenance window. Likewise, relatively few reports run during the late evening hours between eight PM and midnight. We binned these two time periods separately. The remaining time during the days was binned in two-hour blocks. The summary tables below give counts and means of the various bins.
 
-```{r continuesummary, cache=FALSE, echo=FALSE}
+
+```{r continuesummary, cache=TRUE, echo=FALSE}
 hourstats <-aggregate(ReportDeliveryTime~HourBinned,data=reports,mysummary)
 hourstats.df <- data.frame(hourstats[,1:1],hourstats[,-(1)])
-#pander::pander(hourstats.df)
-hourstats.df
+pander(hourstats.df)
 
 sumstats<-aggregate(ReportDeliveryTime~HourBinned:Server,data=reports,mysummary)
 sumstats<-cbind(sumstats[,1:2],sumstats[,-(1:2)])
@@ -514,7 +516,7 @@ sumstats<-cbind(sumstats[,1:2],sumstats[,-(1:2)])
 
 Looking at the data above for the BinnedHour variable the late evening hours and the overnight maintenance window bins display very different standard deviations than the rest of the bins. Also, of note the sample count size differs for those two bins. Finally reports should not be added to the overnight bin that includes the maintenance window.
 
-```{r numReportPlot, cache=TRUE, echo=FALSE}
+```{r numReportPlot, cache=TRUE, echo=FALSE, fig.width=7.25, fig.align='center'}
 
 
 ggplot(mapping=aes(x=HourBinned,y=N,color=Server,group=Server),data=sumstats)+
@@ -529,6 +531,10 @@ The graph shows that each server tracks the others in terms of reports run at a 
 
 The bins for overnight and late evening (“0005”,”2023”) have been excluded from the remainder of analysis.
 
+
+## Unlogged Response Analysis
+
+
 ```{r UnloggedResponseResidual, cache=TRUE, echo=FALSE}
 
 #Remove early morning late evening
@@ -538,12 +544,12 @@ reports.fltr <- reports %>% filter(!HourBinned == "0005" & !HourBinned == "2023"
 model.fit.HrBnSrv <- aov(ReportDeliveryTime~Server+HourBinned+HourBinned:Server, data = reports.fltr)
 anova.disp <- Anova(model.fit.HrBnSrv,type=3,singular.ok=FALSE)
 
-anova.disp[4]
+pander(anova.disp[4])
 ```
 
 The type 3 ANOVA table indicates that both terms as well as the interaction term are statistically significant with very low p-values.
 
-```{r ANOVAIIINoLog, cache=TRUE, echo=FALSE}
+```{r ANOVAIIINoLog, cache=TRUE, echo=FALSE, fig.width=7.25, fig.align='center', fig.height=2.5}
 myfits<-data.frame(fitted.values=model.fit.HrBnSrv$fitted.values,residuals=model.fit.HrBnSrv$residuals)
 
 #Residual vs Fitted
@@ -562,12 +568,13 @@ plot3<-ggplot(myfits, aes(x=residuals)) +
   geom_density(alpha=.1, fill="red")+
   ggtitle("Log ReportDeliveryTime Histogram")
 
-plot1
-plot2
-# plot3 Don't run this one takes too long and we are not going to use it anyway
+grid.arrange(plot1,plot2, nrow=1, ncol=2)
+
 ```
 
 The residual plot appears to demonstrate a cone shape with residuals beneath 2000 being noticeably more spread out than those above 3000. The Q-Q plot displays dramatic differences from normality. A log transform of the response variable is necessary.
+
+## Logged Response Analysis
 
 ```{r loggedResponsesummary, cache=TRUE, echo=FALSE}
 reports.fltr$ReportDeliveryTimeLog <- log(reports.fltr$ReportDeliveryTime)
@@ -575,16 +582,18 @@ reports.fltr$ReportDeliveryTimeLog <- log(reports.fltr$ReportDeliveryTime)
 model.fit.HrBnSrvlg <- aov(ReportDeliveryTimeLog~Server+HourBinned+HourBinned:Server, data = reports.fltr)
 anova.fltr.disp <- Anova(model.fit.HrBnSrvlg,type=3,singular.ok=FALSE)
 
-anova.fltr.disp[4]
+pander(anova.fltr.disp[4])
 ```
 
-The type III ANOVA table again shows that both the interaction term as well as the individual terms are significant.
+* The type III ANOVA table again shows that both the interaction term as well as the individual terms are significant.	
+
+The summary tables for the logged response variable are displayed below
 
 ```{r Summaryloged, cache=TRUE, echo=FALSE}
 
 servestats.fltr <-aggregate(ReportDeliveryTimeLog~Server,data=reports.fltr,mysummary)
 servestats.fltr.df <- data.frame(servestats.fltr[,1:1],servestats.fltr[,-(1)])
-servestats.fltr.df
+pander(servestats.fltr.df)
 ```
 
 The mean and standard deviation of the logged ReportDeliveryTime track extremely close now with respect to the server variable.
@@ -592,7 +601,7 @@ The mean and standard deviation of the logged ReportDeliveryTime track extremely
 ```{r logbinsummary, cache=TRUE, echo=FALSE}
 hourstats.fltr <-aggregate(ReportDeliveryTimeLog~HourBinned,data=reports.fltr,mysummary)
 hourstats.fltr.df <- data.frame(hourstats.fltr[,1:1],hourstats.fltr[,-(1)])
-hourstats.fltr.df
+pander(hourstats.fltr.df)
 
 sumstats.log.fltr<-aggregate(ReportDeliveryTimeLog~HourBinned:Server,data=reports.fltr,mysummary)
 sumstats.log.fltr<-cbind(sumstats.log.fltr[,1:2],sumstats.log.fltr[,-(1:2)])
@@ -600,12 +609,11 @@ sumstats.log.fltr<-cbind(sumstats.log.fltr[,1:2],sumstats.log.fltr[,-(1:2)])
 ```
 
 
-
-The HourBinned variable does display some differences in standard deviation. This issue is examined below. Please note that the over night and late evening hours were dropped from the model.  An explanation for a penalty (4x multiplier on P-Value) we have applied to account for the variance in standard deviation may be found in the appendix section titled:  2-way ANOVA violation in SD.
+The HourBinned variable does display some differences in standard deviation. Please note that the over night and late evening hours were dropped from the model.  An explanation for a penalty (4x multiplier on P-Value) we have applied to account for the variance in standard deviation may be found in the appendix section titled:  2-way ANOVA violation in SD.
 
 The following graph shows that the mean log of the delivery time varies by the time of day and has a different standard deviation during times of high loads. 
 
-```{r plotbySrvHour, cache=TRUE, echo=FALSE}
+```{r plotbySrvHour, cache=TRUE, echo=FALSE, fig.width=7.25, fig.align='center'}
 
 ggplot(mapping=aes(x=HourBinned,y=Mean,color=Server,group=Server),data=sumstats.log.fltr)+
   geom_line()+
@@ -618,7 +626,7 @@ ggplot(mapping=aes(x=HourBinned,y=Mean,color=Server,group=Server),data=sumstats.
 
 The following plots were created to further check for normality
 
-```{r loggedResponseResidual, cache=TRUE, echo=FALSE}
+```{r loggedResponseResidual, cache=TRUE, echo=FALSE, fig.width=7.25, fig.align='center', fig.height=3}
 myfits<-data.frame(fitted.values=model.fit.HrBnSrvlg$fitted.values,residuals=model.fit.HrBnSrvlg$residuals)
 
 #Residual vs Fitted
@@ -637,13 +645,13 @@ plot3.fltr.log<-ggplot(myfits, aes(x=residuals)) +
   geom_density(alpha=.1, fill="red")+
   ggtitle("Log ReportDeliveryTime Histogram Filtered")
 
-plot1.fltr.log
-plot2.fltr.log
-plot3.fltr.log
+grid.arrange(plot1.fltr.log, plot2.fltr.log, plot3.fltr.log, nrow=1, ncol=3)
 
 ```
-
 Residuals, Q-Q plot, and the Histogram all support the assumption of normality.
+
+## 2-Way ANOVA Results
+
 Finally, a pairwise comparison based upon server and HourBinned was run. Remember to adjust p-value by a factor of four due to the unequal variance and sample sizes.
 
 
@@ -654,20 +662,23 @@ TukHrB <- TukeyHSD(model.fit.HrBnSrvlg,"HourBinned",conf.level=.95)
 
 TukSrvHrB <- TukeyHSD(model.fit.HrBnSrvlg,"Server:HourBinned",conf.level=.95)
 
-TukSrv[1]
-TukHrB[1]
+pander(TukSrv[1])
+pander(TukHrB[1])
+
 ```
 
-Conclusion and discussion
+## Conclusion and discussion
 	
 The business asked that we determine on what server and at what time of day additional reports should run. 
 
-Due to the residual and Q-Q plot of the untransformed data it was found to be necessary to perform a log transform of the response data. The data responded well to the transformation displaying all the characteristics of normalized data.
+Due to the residual and Q-Q plot of the untransformed data we deemed it necessary to perform a log transform of the response data. The data responded well to the transformation displaying all the characteristics of normalized data.
+
 Using the table “Mean logged response of reports ran by time of day per server” above we can make the following recommendations.
-•	The number of reports run on server “SQLODR03” is about 20 % less than the other two servers. However, at most it has only 18% faster mean report delivery time(95% CI[5.3% - 32%]) this is between server “SQLODR03” and “SQLODR6” for the 10 AM through noon time period
-•	The time period 6 AM to 8 AM has the highest mean report delivery time, followed by 8 AM to 10 AM and 6 PM to 8 pm. Every effort should be made to not schedule new reports during these time frames.
-•	The time period noon to 2 PM has the lowest mean report delivery time, thus if possible new reports should be added there. The relative loading of the servers is as follows. Server “SQLODR02” has a 48% greater mean report delivery time (95% CI[31%, 68%]) than server”SQLODR06” for that time frame. While server “SQLODR3” has a 27% greater mean report delivery time (95% CI[11% , 44%]) than server ”SQLODR06”. Server ”SQLODR06” is the lightest loaded server as measured by mean report delivery time during the noon to 2PM time frame.
-•	The very late evening hours 8PM to midnight remain an option for scheduling reports. Care must be taken that any reports scheduled during that time do not run past midnight into the maintenance window.
+
+*	The number of reports run on server “SQLODR03” is about 20 % less than the other two servers. However, at most it has only 18% faster mean report delivery time(95% CI[5.3% - 32%]) this is between server “SQLODR03” and “SQLODR6” for the 10 AM through noon time period
+* The time period 6 AM to 8 AM has the highest mean report delivery time, followed by 8 AM to 10 AM and 6 PM to 8 pm. Every effort should be made to not schedule new reports during these time frames.
+*	The time period noon to 2 PM has the lowest mean report delivery time, thus if possible new reports should be added there. The relative loading of the servers is as follows. Server “SQLODR02” has a 48% greater mean report delivery time (95% CI[31%, 68%]) than server”SQLODR06” for that time frame. While server “SQLODR3” has a 27% greater mean report delivery time (95% CI[11% , 44%]) than server ”SQLODR06”. Server ”SQLODR06” is the lightest loaded server as measured by mean report delivery time during the noon to 2PM time frame.
+*	The very late evening hours 8PM to midnight remain an option for scheduling reports. Care must be taken that any reports scheduled during that time do not run past midnight into the maintenance window.
 
 
 
@@ -947,9 +958,38 @@ toc()
 
 
 
-# Appendix: Obj1 Performance Testing
-```{r Performance testing, cache=TRUE, include=FALSE}
+# Appendix: 2-way ANOVA - Dealing with violation of SD assumption
 
+The difference in standard deviation between the various groups is concerning. On-line research yielded the following article [https://link.springer.com/article/10.3758/s13428-017-0918-2?shared-article-renderer#Tab6](https://link.springer.com/article/10.3758/s13428-017-0918-2?shared-article-renderer#Tab6) . The article indicates that a useful measure of unequal variance is the Variance ratio. This ratio is simply the largest group variance divided by the smallest group variance. Looking at the summary statistics table for hours binned we find that:
+
+$$Variance Ratio=  \frac{(σ_{max})^2}{(σ_{min} )^2} = \frac{2.84^2}{1.20^2} =5.6$$
+
+
+
+
+The correlation between the sample size and variance is -0.81. The coefficient of sample size variation $\Delta n$ was calculated to be: $\frac{SD(Group Sample Size)}{mean(Group Sample Size)}=0.932$
+
+According to the article’s conclusions with the parameters as calculated highlighted below (Table 10 of the article) the Type I error ratio will be liberal. However, most p-values reported by the two-way ANOVA are very small. The effects of unequal sample size and unequal variance within the sample groups should only affect relatively few term pairings. Assume p-values can be as much as four times larger than the given value. 
+
+
+|Variance ratio	|Pairing|	Coefficient of sample size variation|	Type I error rate|
+|---|---|---|---|
+|1.6, 1.7, 1.8|	+/−  1	|0.50	|Liberal|
+|2|	−1|	0.33; 0.50	|Liberal|
+|3|	1	|0.50	|Conservative|
+| |	−.50|	0.50	|Liberal|
+| |	−1|	0.33; 0.50	|Liberal|
+|5 & 9|	1|	0.50	|Conservative|
+| |	−.50	0.33; 0.50	|Liberal|
+| |	−1 |	0.16; 0.33; 0.50|	Liberal|
+
+
+# Appendix: MLR Performance Testing
+
+```{r Performance testing, cache=TRUE, echo=FALSE, fig.height=3, fig.width=7.25, fig.align='center'}
+
+
+par(mfrow=c(1,3))
 
 #Formatting data for GLM net
 x=model.matrix(LogReportDelivTime~.,train)[,-1]
@@ -962,7 +1002,7 @@ grid=10^seq(10,-2, length =100)
 lasso.mod=glmnet(x,y,alpha=1, lambda =grid)
 
 cv.out=cv.glmnet(x,y,alpha=1) #alpha=1 performs LASSO
-plot(cv.out)
+plot(cv.out, main="Lasso")
 bestlambda<-cv.out$lambda.min  #Optimal penalty parameter.  You can make this call visually.
 lasso.pred=predict(lasso.mod ,s=bestlambda ,newx=xtest)
 
@@ -988,7 +1028,7 @@ RMSE_org_LASSO <- RMSE(exp(lasso.pred), exp(ytest))
 
 # RIDGE
 cv.out.ridge=cv.glmnet(x,y,alpha=0) #alpha=1 performs RIDGE
-plot(cv.out.ridge)
+plot(cv.out.ridge, main="Ridge")
 
 cv.out.ridge$lambda.min
 
@@ -1003,7 +1043,7 @@ predictions <- model_ridge %>% predict(xtest) %>% as.vector()
 testMSE_RIDGE<-mean((ytest-predictions)^2)
 testMSE_RIDGE
 
-plot(predictions, ytest, xlim = c(0,20), ylim = c(0,20))
+plot(predictions, ytest, xlim = c(5,10), ylim = c(5,10), main="Predicted vs Test")
 
 
 # Model performance metrics
@@ -1048,19 +1088,3 @@ RMSE_org_ELA <- RMSE(exp(predictions_ela), exp(ytest))
 RMSE_org_ELA
 ```
 
-
-# Appendix: 2-way ANOVA violation in SD
-
-	The difference in standard deviation between the various groups is concerning. On-line research yielded the following article https://link.springer.com/article/10.3758/s13428-017-0918-2?shared-article-renderer#Tab6 . The article indicates that a useful measure of unequal variance is the Variance ratio. This ratio is simply the largest group variance divided by the smallest group variance. Looking at the summary statistics table for hours binned we find that:
-Variance Ratio=  (σ_max )^2/(σ_min )^2 =  〖2.84〗^2/〖1.20〗^2 =5.6
-The correlation between the sample size and variance is -0.81. The coefficient of sample size variation (Δn) was calculated to be (SD(Group Sample Size))/(mean(Group Sample Size))=0.932
-According to the article’s conclusions with the parameters as calculated highlighted below (Table 10 of the article) the Type I error ratio will be liberal. However, most p-values reported by the two-way ANOVA are very small. The effects of unequal sample size and unequal variance within the sample groups should only affect relatively few term pairings. Assume p-values can be as much as four times larger than the given value. 
-Variance ratio	Pairing	Coefficient of sample size variation	Type I error rate
-1.6, 1.7, 1.8	+ or −1	0.50	Liberal
-2	−1	0.33; 0.50	Liberal
-3	1	0.50	Conservative
- 	−.50	0.50	Liberal
- 	−1	0.33; 0.50	Liberal
-5 & 9	1	0.50	Conservative
- 	−.50	0.33; 0.50	Liberal
- 	−1	0.16; 0.33; 0.50	Liberal
