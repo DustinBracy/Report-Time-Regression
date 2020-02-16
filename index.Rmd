@@ -980,8 +980,11 @@ According to the article’s conclusions with the parameters as calculated highl
 | |	−.50|	0.50	|Liberal|
 | |	−1|	0.33; 0.50	|Liberal|
 |5 & 9|	1|	0.50	|Conservative|
-| |	−.50	0.33; 0.50	|Liberal|
-| |	−1 |	0.16; 0.33; 0.50|	Liberal|
+| |	−.50 |	0.33; 0.50	|Liberal|
+| |	**−1** |	**0.16; 0.33; 0.50**|	**Liberal**[^1]|
+
+
+[^1]: The **Bold** line in the table was utilized for p-value adjustments. 
 
 
 # Appendix: MLR Performance Testing
