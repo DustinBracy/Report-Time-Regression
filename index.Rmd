@@ -61,7 +61,11 @@ Gilsbar has provided report data spanning a 12 month period from January 2019 th
 We'd like to tackle these questions using two separate models for interpretation.  For our first objective, we use Multiple Linear Regression techniques to predict runtime using several of the report metrics and features.  As our second objective, we will utilize two-way ANOVA techniques to compare ReportDeliveryTime vs Server, Report Category, and Report Format.
 
 # Exploratory Data Analysis
-Our EDA resulted in the following observations:  
+Our EDA analysis revealed that there are several categorical variables that don’t show an apparent linear relationship with ReportDeliveryTime.  Also, we found that our response variable, ReportDeliveryTime, is heavily right skewed and likely needs a log transformation in order to continue analysis.
+
+Given some additional knowledge of the dataset, we learned that only three production servers are useful for prediction (SQLODR2, SQLODR3 and SQLODR6) and that the ReportID (Specific Report) may be related to ReportBuildTime.  To explore this, we converted the ReportID to factors and conducted simple linear regression, giving us an R^2 of 0.79 which is very good, however the ReportID has over 1500 factor levels which make the explanation difficult when introducing additional features, so we continued to explore other features and temporarily ignore ReportID.
+
+Our EDA resulted in the following additional observations:  
 
 * Submission times are most often 6am, with 9am and 6pm as secondary peak times.
 * The first day of Month is peak report day
@@ -114,8 +118,20 @@ e.categoryDelivery <- reports %>% group_by(ReportCategory) %>% summarise(MeanDel
 # Avg Build time by ReportCategory 
 e.categoryBuild <- reports %>% group_by(ReportCategory) %>% summarise(AvgTime=round(mean(ReportBuildTime),0)) %>% ggplot(aes(x=fct_rev(ReportCategory), y=AvgTime)) + geom_bar(stat="identity", fill="orange", color="grey40") + labs(title="Mean Build Time By Category", x="Report Category",y="Seconds") + geom_text(aes(x=ReportCategory, y=0.01, label= AvgTime), vjust=0.5, hjust=-.25, size=3, colour="black", fontface="bold",angle=360) + coord_flip()
 
+## Count By ReportDeliveryTime
+reports$ReportDeliveryTime = as.numeric(reports$ReportDeliveryTime)
+e.deliveryHist <- ggplot(data=reports[!is.na(reports$ReportDeliveryTime),], aes(x=ReportDeliveryTime)) +
+        geom_histogram(fill="orange", binwidth = 1000) + labs(title="Report Delivery Time", x="Report Delivery Time")
+
+## Count By ReportDeliveryTime - log
+reports$ReportDeliveryTime = as.numeric(reports$ReportDeliveryTime)
+e.logDeliveryHist <- ggplot(data=reports[!is.na(reports$ReportDeliveryTime),], aes(x=log(ReportDeliveryTime))) +
+        geom_histogram(fill="orange") + labs(title="Log Report Delivery Time", x="x=log(Report Delivery Time)")
+
+
 grid.arrange(e.freq, e.priority, e.format, e.delivery,  ncol=2, nrow=2)
 grid.arrange(e.server,e.weekday,  ncol=1, nrow=2)
+grid.arrange(e.deliveryHist,e.logDeliveryHist,  ncol=1, nrow=2)
 
 
 # Buildtime by server
@@ -133,25 +149,25 @@ grid.arrange(e.hour,e.month,  ncol=2, nrow=1)
 ```
 
 
-```{r Dustins MLR options, include=FALSE, cache=TRUE}
+```{r EDA Regression options, include=FALSE, cache=TRUE}
 
 # Basic fit: ~ 33% r^2 and 6.65 MSE
 #fit <- lm(log(ReportBuildTime)~ReportCategory + GroupCount + GroupCount*ReportCategory, data=reports)
 
 # Better fit:
-fit <- lm(log(ReportBuildTime)~Server+Priority+GroupCount+ReportCategory+DayOfWeek+DayOfMonth+AgentCount+RptFrmt+DelivMthd+HourOfDay, data=reports)
+#fit <- lm(log(ReportBuildTime)~Server+Priority+GroupCount+ReportCategory+DayOfWeek+DayOfMonth+AgentCount+RptFrmt+DelivMthd+HourOfDay, data=reports)
 
 # Better fit with interactions: (takes quite a few minutes) ~41% r^2 and 5.98s MSE
 #fit <- lm(log(ReportBuildTime)~ReportCategory + HourOfDay + GroupCount + DayOfMonth +  HourOfDay*ReportCategory + GroupCount*ReportCategory + HourOfDay*DayOfMonth + GroupCount*DayOfMonth, data=reports)
 
 # ReportId fit: (takes a few minutes)
-#fit <- lm(log(ReportBuildTime)~as.factor(ReportId), data=reports) # ~79% r^2 and 2.83s MSE
+fit <- lm(log(ReportBuildTime)~as.factor(ReportId), data=reports) # ~79% r^2 and 2.83s MSE
 #fit2 <- lm(log(ReportDeliveryTime)~as.factor(ReportId), data=reports) # ~49% r^2 and 4.5s MSE
 
 
 ```
 
-```{r Fit Diagnostics, cache=TRUE, include=FALSE}
+```{r EDA Regression Fit Diagnostics, cache=TRUE, include=FALSE}
 
 ########### Report Build Time Section ########### 
 summary(fit)
@@ -215,29 +231,28 @@ Using known parameters of a desired report, can we predict how long it will take
 
 We have found it best to use all parameters made available to us within the transformed 'reports' dataset to fit the response variable “ReportDeliveryTime.”  Within the report, intuition tells us a few key parameters contribute strongly to the delivery time.  For example: ReportBuildTime, QueueTime, LagTime and ReportBytes, cannot be used because they are all unknown before report completion. 
 
-## The Intuitive Model:
-Our EDA analysis revealed that there are several categorical variables that don’t show an apparent linear relationship with ReportDeliveryTime.  Also, we found that our response variable, ReportDeliveryTime, is heavily right skewed and likely needs a log transformation in order to continue analysis.
+## Simple Linear Regression Model:  
+Looking at ReportBuildTime vs ReportId gives us the best $R^{2}$ at approximately .79 and a 2.83s RMSE.  ReportDeliveryTime vs ReportId gives us an acceptable $R^{2}$ of about .49 and a 4.5s RMSE.  This performance is acceptable, but becomes very difficult to explain when adding additional features due to the large number of reports (over 1,000).  Thus, we will attempt to answer a broader question: given a report group how long should I expect to wait?
 
-Given some additional knowledge of the dataset, we learned that only three production servers are useful for prediction (SQLODR2, SQLODR3 and SQLODR6) and that the ReportID (Specific Report) may be related to ReportBuildTime.  To explore this, we converted the ReportID to factors and conducted simple linear regression, giving us an R^2 of 0.79 which is very good, however the ReportID has over 1500 factor levels which make the explanation difficult when introducing additional features, so we continued to explore other features and temporarily ignore ReportID.
-
-
-
-(TODO)
+## Multiple Linear Regression subset:
 
 Because the amount of data is very large and we don’t find a dependency of ReportID with ReportDeliveryTime, we choose a single type of report “ReportID=93”, which is roughly 1/10 of the overall dataset as a representative subset and use it for later analysis.
 
-With this subset, we filtered out a few more parameters and the left 10 parameters for fittings are: Server, ReportCategory, SchedFreq, HourOfDay, DayOfMonth, ReportCategory,Server, AgentCount, GroupCount,DelivMethod. First we did a fit with all parameters and get a resulted R^2 of 0.36. It was not too bad.
+With this subset, we filtered out a few more parameters and the left 10 parameters for fittings are: Server, ReportCategory, SchedFreq, HourOfDay, DayOfMonth, ReportCategory,Server, AgentCount, GroupCount,DelivMethod. First we did a fit with all parameters and get a resulted $R^{2}$ of 0.36. It was not too bad.
 
 
 
 ### Model Selection Required
+
+(TODO)
 		Type of Selection
 			Options: LASSO, RIDGE, ELASTIC NET,
 			     Stepwise, Forward, Backward, 
 		             	     Manual / Intuition,
 			     A mix of all of the above.  	
 
-## Checking Assumptions
+
+### Checking Assumptions
 Linear Regression analysis has basic assumptions of residual normality, linearity of features, constant variance (equal spread), and independence of observations.
 
 The q-q plot below (and previous histogram) shows that the assumption of normality may be violated so we do need to log transform our response variables.  We confirmed this to be correct by fitting a new model after log transformation were performed. 
@@ -264,27 +279,29 @@ After transofrmation we observed the q-q plot to exhbit qualities indicating the
 		Interpretation  Required
 		Confidence Intervals Required
 	
-## Conclusion
-In conclusion, the mulit-linear model with 5 predictors leveraging a logged response gave the best MSE with avoidance of overfitting. We used a train and test split to validate the MSE across many method and reach this conclusion.
+### Conclusion
+In conclusion, the mulit-linear model with 5 predictors leveraging a logged response gave the best MSE with avoidance of overfitting. We used a train and test split to validate the MSE across many method and reach this conclusion.  
+
+We also suspect that multiple linear regression isn't the best model for predicting runtime given this extremely variable dataset.  Several high leverage outliers keep the MLR model from tightening predictions to desirable tolerances.  Report delivery time varies from milliseconds to several days, which may be the result of a failed report which was restarted, or a large number of queued reports (such as those beginning at 6am on the first.)  Having indicators for restarted reports, or the count of reports in the queue at the time the report starts would be useful in predicting runtime.
 
 
-```{r , cache=TRUE}
+```{r , cache=TRUE, echo=FALSE}
 reports_serv_samp <- reports %>% filter(ReportId == "93") 
 
 reports_serv_new <- within(reports_serv_samp,
 rm(ReportId,Priority,RptFrmt,QueuedDateTime,RenderStartDateTime,ReportStartDateTime,ReportEndDateTime, RenderEndDateTime,GroupCustom,CurrencyCode,groupSF,groupFI,ReportBuildTime,QueueTime,LagTime,Agents,TestProdIndicator,ReportBytes,HourBinned,TimeBlock3h,TimeBlock4h,DateFrom,DateThru,queued,NumDays))
 
-
+## This should have been done in ETA section
 #Drop levels of unused server names
-table(droplevels(reports_serv_new)$Server)
-reports_serv_new$Server <- factor(reports_serv_new$Server)
-levels(reports_serv_new$Server)
+#table(droplevels(reports_serv_new)$Server)
+#reports_serv_new$Server <- factor(reports_serv_new$Server)
+#levels(reports_serv_new$Server)
 
 
-pairs(reports_serv_new[,-c(2,9)])
+#pairs(reports_serv_new[,-c(2,9)])
 
-all_model<-lm(ReportDeliveryTime~., data=reports_serv_new)
-summary(all_model)
+#all_model<-lm(ReportDeliveryTime~., data=reports_serv_new)
+#summary(all_model)
 
 
 all_model_log<-lm(log(ReportDeliveryTime)~., data=reports_serv_new)
@@ -509,7 +526,6 @@ RMSE_org_ELA <- RMSE(exp(predictions_ela), exp(ytest))
 ```
 
 
-In addition to overall conclusions, feel free to include additional insights or concerns gleaned from the analysis.  What needs to be done next or how could we do it better next time?  
 
 # Objective 2:
 Our question of interest from Gilsbar is which server, and what time of day yields the best performance to schedule new reports? 
