@@ -28,7 +28,8 @@ library(caret)
 library(car)
 library(limma)
 library(lsmeans)
-
+library(magick)
+options(kableExtra.auto_format = FALSE)
 # import report data:
 load("./data/reports.RData")
 
@@ -241,9 +242,11 @@ Because the amount of data is very large and we didn’t find a dependency of Re
 
 With this subset, we filtered out a few more parameters and left 10 parameters: Server, ReportCategory, SchedFreq, HourOfDay, DayOfMonth, ReportCategory,Server, AgentCount, GroupCount,DelivMethod. 
 
-First we did a fit with all parameters and get a resulted $R^{2}$ of 0.54, which is not too bad.
+First we did a fit with all parameters and get a resulted $R^{2}$ of 0.54, which is not too bad, but is quite difficult to explain.
 
-```{r Obj1 Sample Selection, cache=TRUE, include=FALSE}
+Ultimately after using several feature selection methodologies, we discovered that using all 30 features nets an $R^{2}$ of 0.54, while using just 5 of the most statistically significant features results in an $R^{2}$ of 0.52.  
+
+```{r Obj1 Setup, cache=TRUE, include=FALSE}
 reports_serv_samp <- reports %>% filter(ReportId == "93") 
 
 reports_serv_new <- within(reports_serv_samp,
@@ -268,17 +271,45 @@ set.seed(1234)
 index<-sample(1:dim(reports_serv_newlog)[1],20000,replace=F)
 train<-reports_serv_newlog[index,]
 test<-reports_serv_newlog[-index,]
+
+# 
+log.fwdnv20=regsubsets(LogReportDelivTime~.,data=reports_serv_newlog,method="forward",nvmax=30)
+log.stepnv20=regsubsets(LogReportDelivTime~.,data=reports_serv_newlog,method="seqrep",nvmax=30)
+trainlog.fwdnv30=regsubsets(LogReportDelivTime~.,data=train,method="forward",nvmax=30)
+trainlog.stepnv30=regsubsets(LogReportDelivTime~.,data=train,method="seqrep",nvmax=30)
+
 ```
 
+### Checking Assumptions
+Linear Regression analysis has basic assumptions of residual normality, linearity of features, constant variance (equal spread), and independence of observations.
+
+The q-q plot below (and previous histogram) shows that the assumption of normality has much improved after log transforming our response variable.  We confirmed this to be correct by fitting the final model after log transformation. 
+
+After transformation we observed the q-q plot to exhibit qualities indicating the data is more normal: ideally we want a mostly straight line following closely to the residual 0 line. 
+
+* QQ Plot shows a slight departure from normality
+* Cook's D shows no major leverage points (.003)
+* There are a few outliers with leverage in the sample selection, but not as much in the full data
+* Histogram shows normality with a bit of right skew
+* Ideally we'd like to see a totally random cloud in the fitted vs residuals
+* The outliers are impacting predictions fairly significantly as can be seen by the leverage chart
+
+![QQ Plot shows a slight departure from normality](./img/QQ.png) ![Cook's D shows no major leverage points (.003)](./img/cooksD.png)
+
+
+![There are a few outliers with leverage in the sample, but not so much in the full data](./img/fitted.png) ![Ideally we'd like to see a totally random cloud here](./img/actVSfit.png)
+
+
+![Histogram shows normality with a bit of right skew](./img/hist.png) ![These outliers are impacting predictions fairly significantly](./img/leverage.png) 
+
+
+
 ### Model Selection
-#### Forward selection selected coefficients:  
+#### Feature Selection: Forward  
 
-SchedFreqOneTime, SchedFreqWeek, ReportCategoryClaims, DayOfMonth04, HourOfDay21 , HourOfDay22, AgentCount, ReportCategoryEligibility, HourOfDay02, HourOfDay03 
-
-```{r Obj1 Forward Selection, cache=TRUE, echo=FALSE, warning=FALSE, fig.height=3}
+```{r Obj1 Forward Selection, cache=TRUE, echo=FALSE, warning=FALSE, fig.height=3, fig.align='center'}
 
 
-log.fwdnv20=regsubsets(LogReportDelivTime~.,data=reports_serv_newlog,method="forward",nvmax=30)
 #summary(log.fwdnv20)
 #summary(log.fwdnv20)$adjr2
 #summary(log.fwdnv20)$rss
@@ -302,18 +333,15 @@ plot(1:31,rss,type="l",ylab="train RSS",xlab="# of predictors")
 index<-which(rss==min(rss))
 points(index,rss[index],col="red",pch=10)
 
-  
-#coef(log.fwdnv20,10)
+# Output coefficients
+as_image(kable_styling(kable(coef(log.fwdnv20,10))), file = './img/fwd.png')
 
-
-trainlog.fwdnv30=regsubsets(LogReportDelivTime~.,data=train,method="forward",nvmax=30)
 testASE<-c()
 #note my index is to 20 since that what I set it in regsubsets
 for (i in 1:31){
   predictions_fwd<-predict.regsubsets(object=trainlog.fwdnv30,newdata=test,id=i) 
   testASE[i]<-mean((test$LogReportDelivTime-predictions_fwd)^2)
 }
-trainlog.stepnv30=regsubsets(LogReportDelivTime~.,data=train,method="seqrep",nvmax=30)
 
 par(mfrow=c(1,1))
 plot(1:31,testASE,type="l",xlab="# of predictors",ylab="test vs train ASE",ylim=c(0,2))
@@ -327,12 +355,9 @@ RMSE_org_Fwd <- RMSE(exp(predictions_fwd), exp(test$LogReportDelivTime))
 
 ```
 
-#### Sequential Repetition selected coefficients:
+#### Feature Selection: Stepwise  
 
-SchedFreqOneTime, SchedFreqWeek, DayOfMonth02, HourOfDay21, HourOfDay22, AgentCount, ReportCategoryEligibility, ReportCategoryMiscellaneous, HourOfDay02, HourOfDay03
-
-```{r Obj1 Seq Rep Selection, cache=TRUE, echo=FALSE, warning=FALSE, fig.height=3}
-log.stepnv20=regsubsets(LogReportDelivTime~.,data=reports_serv_newlog,method="seqrep",nvmax=30)
+```{r Obj1 Seq Rep Selection, cache=TRUE, echo=FALSE, warning=FALSE, fig.height=3, fig.align='center'}
 #summary(log.stepnv20)
 #summary(log.stepnv20)$adjr2
 #summary(log.stepnv20)$rss
@@ -354,7 +379,8 @@ plot(1:31,rss,type="l",ylab="train RSS",xlab="# of predictors")
 index<-which(rss==min(rss))
 points(index,rss[index],col="red",pch=10)
 
-#coef(log.stepnv20,10)
+# Output coefficients
+as_image(kable_styling(kable(coef(log.stepnv20,10))), file = './img/step.png', height = 4)
 
 
 
@@ -375,17 +401,68 @@ RMSE_org_Step <- RMSE(exp(predictions_step), exp(test$LogReportDelivTime))
 
 ```
 
-#### Final Model Adjusted $R^{2}$ and Selected coefficients:
+#### Final Model Selection:
 
-$R^{2}$ = .52
+After the log transformation and re-fitting we get an $R^{2}$ of 0.54! This is good but because we have several features with numerous factor levels, we decided to do a round of feature selection using forward, backward and other criteria.
 
-SchedFreqOneTime, SchedFreqWeek, HourOfDay07,  HourOfDay08,  HourOfDay09, HourOfDay10,  HourOfDay11,  HourOfDay12, HourOfDay13,  HourOfDay14,  HourOfDay15, HourOfDay16,  HourOfDay17,  HourOfDay18, HourOfDay19,  HourOfDay20,  HourOfDay21, HourOfDay22,  HourOfDay23, DayOfMonth02, DayOfMonth03, DayOfMonth04, DayOfMonth05, DayOfMonth06, DayOfMonth07, DayOfMonth08, DayOfMonth09, DayOfMonth10, DayOfMonth11, DayOfMonth12, DayOfMonth13, DayOfMonth14, DayOfMonth15, DayOfMonth16, DayOfMonth17, DayOfMonth18, DayOfMonth19, DayOfMonth20, DayOfMonth21, DayOfMonth22, DayOfMonth23, DayOfMonth24, DayOfMonth25, DayOfMonth26, DayOfMonth27, DayOfMonth28, DayOfMonth29, DayOfMonth30, DayOfMonth31 ReportCategoryExtract, ServerSQLODR3, ServerSQLODR6
+Using forward model selection and nvmax=30, we recognized that the BIC, adjusted $R^{2}$ and RSS shown in plot all show a “plateau” after roughly 25-30 parameters, indicating that we can get best fit and avoid further overfitting. 
 
-```{r Obj1 Final Model Selection, cache=TRUE, echo=FALSE, warning=FALSE}
+We also tried a stepwise selection process and found that the BIC, adjusted $R^{2}$ and RSS showed a similar trend to forward selection. There are 4 variables that appear to be significant: SchedFreq, HourOfDay, DayOfMonth and ReportCategory. The lowest BIC/RSS is similar to forward selection.
+
+By checking the coefficients we identified SchedFreqOneTime and SchedFreqWeek to be statistically significant, so we included SchedFreq in the final model. Some variables related to HourOfDay are siginificant, to include them all we include HourOfDay as a variable in the final model. The final selection composes of 5 variables and the model is below:
+
+$$log(ReportDeliveryTime) = SchedFreq + HourOfDay + DayOfMonth + ReportCategory + Server$$
+
+When we initially build our intuitive model we did not split our dataset into train and test portions. We further conduct LASSO, Ridge and Elastic net for model fitting and there’s no fair way to compare the model of all above methods without a train/test experiment.
+So we perform a roughly 70-30 split on our original dataset to create a train and a test set, then use our train set to fit our optimized linear model and create a prediction vector from our test dataset.
+Then we can calculate our MSE of this model and compare it to those of forward, stepwise, LASSO, Ridge and Elastic net, we get the result below.
+
+__A comparison of Feature Selection methods and their RMSE (lower is better):__
+
+|Method |	RMSE|
+|---|---|
+|Lasso|	1967.324|
+|Ridge	|1908.051|
+|Elastic Net|	1905.987|
+|Forward|	2099.483|
+|Stepwise	|2099.574|
+|LM (5 variables)	|1963.45|
+
+
+From the table above we can see that Lasso, Ridge and Elastic Net all give us a RMSE very close to each other, and slightly smaller than the multi-linear model. And the forward and stepwise model give us a higher-than-other RMSE. Because the Lasso models used all the variables we are at a risk of overfitting. 
+Below shows a test versus train ASE plot and we can see that the test and train error are very close with a suggestion of including ~30 variables (really 5 category variables). 
+
+Below is a graphical representation of the results of the forward model:
+
+##### ![name](./img/testVStrain.png)  
+
+
+### Interpretation
+Interpretting the outcome of the model requires us to check the coefficients in the table below and provide an explanation. In each categorical variable we can see one level has been chosen to use as the reference. We can check and find all the variables which listed below are with statistically significant p-value.
+
+* Intercept is the mean estimate for the report delivery time keeping other variables constant. 
+* SchedFreqOneTime coefficient can be interpreted as the mean delivery time change from the reference of SchedFreqMonth. 
+* HourOfDay07 can be interpreted as the mean delivery time change from the reference of HourOfDay06. 
+* DayofMonth02 can be interpreted as the mean delivery time change from the reference of DayofMonth01.
+* ReportCategoryExtract can be interpreted as the mean delivery time change from the reference of ReportCategoryClaims. 
+* ServerSQLODR3 can be interpreted as the mean delivery time change from the reference of ServerSQLODR2.    
+The logged variables need to be transformed back from their log in order to be properly interpreted in the context of other variables. Because this is a liner-log model, when interpreting the coefficient of ReportDelivTime, a one unit change in the ReportDelivTime would result in an exp(Beta) change in the mean of y.
+
+The confidence intervals for the parameter estimates are in the table below. The confidence intervals show that all the listed variables don’t contain zero at the 95% level. This indicates that we can reject the null hypothesis and say that these estimates are significantly different from zero.
+
+
+
+```{r Obj1 Final Model Selection, cache=FALSE, echo=FALSE, warning=FALSE, fig.height=9}
 final.model<-lm(LogReportDelivTime~SchedFreq + HourOfDay + DayOfMonth + ReportCategory + Server,data=reports_serv_newlog)
-summary(final.model)$adj.r.squared
+#summary(final.model)$adj.r.squared
 
-#coef(final.model)
+# Output final coefficients
+
+finalDF <- cbind(data.frame(coef(final.model)), confint(final.model))
+
+kable(finalDF)
+
+as_image(kable_styling(kable(finalDF)), file = './img/final.png', height=4)
 
 final.model.train<-lm(LogReportDelivTime~SchedFreq + HourOfDay + DayOfMonth + ReportCategory + Server,data=train)
 predictions_lm <- final.model.train %>% predict(test) %>% as.vector()
@@ -393,140 +470,14 @@ predictions_lm <- final.model.train %>% predict(test) %>% as.vector()
 RMSE_org_LM <- RMSE(exp(predictions_lm), exp(test$LogReportDelivTime))
 ```
 
-### Checking Assumptions
-Linear Regression analysis has basic assumptions of residual normality, linearity of features, constant variance (equal spread), and independence of observations.
 
-The q-q plot below (and previous histogram) shows that the assumption of normality has much improved after log transforming our response variable.  We confirmed this to be correct by fitting the final model after log transformation. 
-
-After transformation we observed the q-q plot to exhibit qualities indicating the data is more normal: ideally we want a mostly straight line following closely to the residual 0 line. 
-
-```{r Obj1 Assumptions, fig.height=3, fig.width=3}
-# QQ Plot shows a slight departure from normality:
-ols_plot_resid_qq(final.model)
-# Cook's D shows no major leverage points (.003)
-ols_plot_cooksd_chart(final.model)
-# There are a few outliers with leverage in the sample, but not so much in the full data:
-ols_plot_resid_lev(final.model)
-# Histogram shows normality with a bit of right skew
-ols_plot_resid_hist(final.model)
-# Ideally we'd like to see a totally random cloud here
-ols_plot_resid_fit(final.model)
-# These outliers are impacting predictions fairly significantly
-ols_plot_obs_fit(final.model)
-
-
-```
-
-
-	
-### Parameter Interpretation
-		Interpretation  Required
-		Confidence Intervals Required
-	
-### Conclusion
-In conclusion, the mulit-linear model with 5 predictors leveraging a logged response gave the best MSE with avoidance of over-fitting. We used a train and test split to validate the MSE across many method and reach this conclusion.  
+## Conclusion
+In conclusion, the mulit-linear model with 5 predictors leveraging a logged response gave the best MSE with avoidance of over-fitting. We used a train and test split to validate the MSE across many methods and reached this conclusion.  We know that the day of the month, the hour of the day, and the report category cause significant changes to estimated report delivery, with several unknown factors possibly related the number of queued reports contributing to large outliers in delivery time.
 
 We also suspect that multiple linear regression isn't the best model for predicting run time given this extremely variable data-set.  Several high leverage outliers keep the MLR model from tightening predictions to desirable tolerances.  Report delivery time varies from milliseconds to several days, which may be the result of a failed report which was restarted, or a large number of queued reports (such as those beginning at 6am on the first.)  Having indicators for restarted reports, or the count of reports in the queue at the time the report starts would be useful in predicting run-time.
 
 
 
-```{r Performance setup, cache=TRUE}
-
-
-#Formatting data for GLM net
-x=model.matrix(LogReportDelivTime~.,train)[,-1]
-y=train$LogReportDelivTime
-
-xtest<-model.matrix(LogReportDelivTime~.,test)[,-1]
-ytest<-test$LogReportDelivTime
-
-grid=10^seq(10,-2, length =100)
-lasso.mod=glmnet(x,y,alpha=1, lambda =grid)
-
-cv.out=cv.glmnet(x,y,alpha=1) #alpha=1 performs LASSO
-plot(cv.out)
-bestlambda<-cv.out$lambda.min  #Optimal penalty parameter.  You can make this call visually.
-lasso.pred=predict(lasso.mod ,s=bestlambda ,newx=xtest)
-
-testMSE_LASSO<-mean((ytest-lasso.pred)^2)
-testMSE_LASSO
-
-
-# Fit the final model on the training data
-model_lasso <- glmnet(x, y, alpha = 1, lambda = bestlambda)
-
-# Display regression coefficients
-#coef(model_lasso)
-
-#coef(lasso.mod,s=bestlambda)
-
-# Model performance metrics
-data.frame(
-  RMSE = RMSE(lasso.pred, ytest),
-  Rsquare = R2(lasso.pred, ytest)
-)
-
-RMSE_org_LASSO <- RMSE(exp(lasso.pred), exp(ytest))
-
-# RIDGE
-cv.out.ridge=cv.glmnet(x,y,alpha=0) #alpha=1 performs RIDGE
-plot(cv.out.ridge)
-
-cv.out.ridge$lambda.min
-
-# Fit the final model on the training data
-model_ridge <- glmnet(x, y, alpha = 0, lambda = cv.out.ridge$lambda.min)
-# Display regression coefficients
-#coef(model_ridge)
-
-# Make predictions on the test data
-predictions <- model_ridge %>% predict(xtest) %>% as.vector()
-
-testMSE_RIDGE<-mean((ytest-predictions)^2)
-testMSE_RIDGE
-
-plot(predictions, ytest, xlim = c(0,20), ylim = c(0,20))
-
-
-# Model performance metrics
-data.frame(
-  RMSE = RMSE(predictions, ytest),
-  Rsquare = R2(predictions, ytest)
-)
-
-RMSE_org_RIDGE <- RMSE(exp(predictions), exp(ytest))
-
-#Elastic net
-# Build the model using the training set
-set.seed(123)
-model_ela <- train(
-  LogReportDelivTime ~., data = train, method = "glmnet",
-  trControl = trainControl("cv", number = 10),
-  tuneLength = 10
-)
-# Best tuning parameter
-model_ela$bestTune
-
-# Coefficient of the final model. You need
-# to specify the best lambda
-#coef(model_ela$finalModel, model_ela$bestTune$lambda)
-
-# Make predictions on the test data
-predictions_ela <- model_ela %>% predict(test) %>% as.vector()
-
-testMSE_ELA<-mean((ytest-predictions_ela)^2)
-testMSE_ELA
-
-
-# Model performance metrics
-data.frame(
-  RMSE = RMSE(predictions_ela, ytest),
-  Rsquare = R2(predictions_ela, ytest)
-)
-
-RMSE_org_ELA <- RMSE(exp(predictions_ela), exp(ytest))
-RMSE_org_ELA
-```
 
 
 
@@ -1023,4 +974,106 @@ toc()
 
 ```
 
+
+
+# Appendix: Obj1 Performance Testing
+```{r Performance testing, cache=TRUE, include=FALSE}
+
+
+#Formatting data for GLM net
+x=model.matrix(LogReportDelivTime~.,train)[,-1]
+y=train$LogReportDelivTime
+
+xtest<-model.matrix(LogReportDelivTime~.,test)[,-1]
+ytest<-test$LogReportDelivTime
+
+grid=10^seq(10,-2, length =100)
+lasso.mod=glmnet(x,y,alpha=1, lambda =grid)
+
+cv.out=cv.glmnet(x,y,alpha=1) #alpha=1 performs LASSO
+plot(cv.out)
+bestlambda<-cv.out$lambda.min  #Optimal penalty parameter.  You can make this call visually.
+lasso.pred=predict(lasso.mod ,s=bestlambda ,newx=xtest)
+
+testMSE_LASSO<-mean((ytest-lasso.pred)^2)
+testMSE_LASSO
+
+
+# Fit the final model on the training data
+model_lasso <- glmnet(x, y, alpha = 1, lambda = bestlambda)
+
+# Display regression coefficients
+#coef(model_lasso)
+
+#coef(lasso.mod,s=bestlambda)
+
+# Model performance metrics
+data.frame(
+  RMSE = RMSE(lasso.pred, ytest),
+  Rsquare = R2(lasso.pred, ytest)
+)
+
+RMSE_org_LASSO <- RMSE(exp(lasso.pred), exp(ytest))
+
+# RIDGE
+cv.out.ridge=cv.glmnet(x,y,alpha=0) #alpha=1 performs RIDGE
+plot(cv.out.ridge)
+
+cv.out.ridge$lambda.min
+
+# Fit the final model on the training data
+model_ridge <- glmnet(x, y, alpha = 0, lambda = cv.out.ridge$lambda.min)
+# Display regression coefficients
+#coef(model_ridge)
+
+# Make predictions on the test data
+predictions <- model_ridge %>% predict(xtest) %>% as.vector()
+
+testMSE_RIDGE<-mean((ytest-predictions)^2)
+testMSE_RIDGE
+
+plot(predictions, ytest, xlim = c(0,20), ylim = c(0,20))
+
+
+# Model performance metrics
+data.frame(
+  RMSE = RMSE(predictions, ytest),
+  Rsquare = R2(predictions, ytest)
+)
+
+RMSE_org_RIDGE <- RMSE(exp(predictions), exp(ytest))
+
+#Elastic net
+# Build the model using the training set
+set.seed(123)
+model_ela <- train(
+  LogReportDelivTime ~., data = train, method = "glmnet",
+  trControl = trainControl("cv", number = 10),
+  tuneLength = 10
+)
+# Best tuning parameter
+model_ela$bestTune
+
+# Coefficient of the final model. You need
+# to specify the best lambda
+#coef(model_ela$finalModel, model_ela$bestTune$lambda)
+
+# Make predictions on the test data
+predictions_ela <- model_ela %>% predict(test) %>% as.vector()
+
+testMSE_ELA<-mean((ytest-predictions_ela)^2)
+testMSE_ELA
+
+
+# Model performance metrics
+data.frame(
+  RMSE = RMSE(predictions_ela, ytest),
+  Rsquare = R2(predictions_ela, ytest)
+)
+
+RMSE_org_ELA <- RMSE(exp(predictions_ela), exp(ytest))
+
+# Mean Squared Error in Seconds:
+RMSE_org_ELA
+```
 
