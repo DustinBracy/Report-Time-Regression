@@ -260,7 +260,7 @@ summary(all_model_log)$adj.r.squared
 ```
 
 ### Model Selection
-Forward selection with 30 max features:
+Forward selection selected coefficients:
 ```{r Obj1 Forward Selection, cache=TRUE, echo=FALSE, warning=FALSE}
 reports_serv_newlog <- reports_serv_new
 reports_serv_newlog$LogReportDelivTime <- log(reports_serv_newlog$ReportDeliveryTime)
@@ -297,7 +297,7 @@ points(index,rss[index],col="red",pch=10)
 coef(log.fwdnv20,10)
 ```
 
-Sequential Repitition Model:
+Sequential Repitition selected coefficients:
 ```{r Obj1 Seq Rep Selection, cache=TRUE, echo=FALSE, warning=FALSE}
 log.stepnv20=regsubsets(LogReportDelivTime~.,data=reports_serv_newlog,method="seqrep",nvmax=30)
 #summary(log.stepnv20)
@@ -324,7 +324,7 @@ points(index,rss[index],col="red",pch=10)
 coef(log.stepnv20,10)
 ```
 
-Final Model Adjusted $R^{2}$:
+Final Model Adjusted $R^{2}$ and selected coefficients:
 ```{r Obj1 Final Model Selection, cache=TRUE, echo=FALSE, warning=FALSE}
 final.model<-lm(LogReportDelivTime~SchedFreq + HourOfDay + DayOfMonth + ReportCategory + Server,data=reports_serv_newlog)
 summary(final.model)$adj.r.squared
