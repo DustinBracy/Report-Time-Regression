@@ -231,26 +231,106 @@ Using known parameters of a desired report, can we predict how long it will take
 
 We have found it best to use all parameters made available to us within the transformed 'reports' dataset to fit the response variable “ReportDeliveryTime.”  Within the report, intuition tells us a few key parameters contribute strongly to the delivery time.  For example: ReportBuildTime, QueueTime, LagTime and ReportBytes, cannot be used because they are all unknown before report completion. 
 
-## Simple Linear Regression Model:  
+## Simple Linear Regression Model
 Looking at ReportBuildTime vs ReportId gives us the best $R^{2}$ at approximately .79 and a 2.83s RMSE.  ReportDeliveryTime vs ReportId gives us an acceptable $R^{2}$ of about .49 and a 4.5s RMSE.  This performance is acceptable, but becomes very difficult to explain when adding additional features due to the large number of reports (over 1,000).  Thus, we will attempt to answer a broader question: given a report group how long should I expect to wait?
 
-## Multiple Linear Regression subset:
+## Multiple Linear Regression subset
 
-Because the amount of data is very large and we don’t find a dependency of ReportID with ReportDeliveryTime, we choose a single type of report “ReportID=93”, which is roughly 1/10 of the overall dataset as a representative subset and use it for later analysis.
+Because the amount of data is very large and we didn’t find a dependency of ReportID with ReportDeliveryTime, we chose a single type of report “ReportID=93”, which is roughly 1/10 of the overall dataset as a representative subset and used it for the remaining analysis.
 
-With this subset, we filtered out a few more parameters and the left 10 parameters for fittings are: Server, ReportCategory, SchedFreq, HourOfDay, DayOfMonth, ReportCategory,Server, AgentCount, GroupCount,DelivMethod. First we did a fit with all parameters and get a resulted $R^{2}$ of 0.36. It was not too bad.
+With this subset, we filtered out a few more parameters and left 10 parameters: Server, ReportCategory, SchedFreq, HourOfDay, DayOfMonth, ReportCategory,Server, AgentCount, GroupCount,DelivMethod. 
+
+First we did a fit with all parameters and get a resulted $R^{2}$ of 0.54, which is not too bad.
+
+```{r Obj1 Sample Selection, cache=TRUE, include=FALSE}
+reports_serv_samp <- reports %>% filter(ReportId == "93") 
+
+reports_serv_new <- within(reports_serv_samp,
+rm(ReportId,Priority,RptFrmt,QueuedDateTime,RenderStartDateTime,ReportStartDateTime,ReportEndDateTime, RenderEndDateTime,GroupCustom,CurrencyCode,groupSF,groupFI,ReportBuildTime,QueueTime,LagTime,Agents,TestProdIndicator,ReportBytes,HourBinned,TimeBlock3h,TimeBlock4h,DateFrom,DateThru,queued,NumDays))
 
 
+#pairs(reports_serv_new[,-c(2,9)])
 
-### Model Selection Required
+all_model<-lm(ReportDeliveryTime~., data=reports_serv_new)
+summary(all_model)$adj.r.squared
 
-(TODO)
-		Type of Selection
-			Options: LASSO, RIDGE, ELASTIC NET,
-			     Stepwise, Forward, Backward, 
-		             	     Manual / Intuition,
-			     A mix of all of the above.  	
+all_model_log<-lm(log(ReportDeliveryTime)~., data=reports_serv_new)
+summary(all_model_log)$adj.r.squared
 
+```
+
+### Model Selection
+Forward selection with 30 max features:
+```{r Obj1 Forward Selection, cache=TRUE, echo=FALSE, warning=FALSE}
+reports_serv_newlog <- reports_serv_new
+reports_serv_newlog$LogReportDelivTime <- log(reports_serv_newlog$ReportDeliveryTime)
+reports_serv_newlog <- na.omit(reports_serv_newlog)
+
+reports_serv_newlog <- within(reports_serv_newlog, rm(ReportDeliveryTime))
+
+
+log.fwdnv20=regsubsets(LogReportDelivTime~.,data=reports_serv_newlog,method="forward",nvmax=30)
+#summary(log.fwdnv20)
+#summary(log.fwdnv20)$adjr2
+#summary(log.fwdnv20)$rss
+#summary(log.fwdnv20)$bic
+
+
+par(mfrow=c(1,3))
+bics<-summary(log.fwdnv20)$bic
+plot(1:31,bics,type="l",ylab="BIC",xlab="# of predictors")
+index<-which(bics==min(bics))
+points(index,bics[index],col="red",pch=10)
+
+
+adjr2<-summary(log.fwdnv20)$adjr2
+plot(1:31,adjr2,type="l",ylab="Adjusted R-squared",xlab="# of predictors")
+index<-which(adjr2==max(adjr2))
+points(index,adjr2[index],col="red",pch=10)
+
+rss<-summary(log.fwdnv20)$rss
+plot(1:31,rss,type="l",ylab="train RSS",xlab="# of predictors")
+index<-which(rss==min(rss))
+points(index,rss[index],col="red",pch=10)
+
+  
+coef(log.fwdnv20,10)
+```
+
+Sequential Repitition Model:
+```{r Obj1 Seq Rep Selection, cache=TRUE, echo=FALSE, warning=FALSE}
+log.stepnv20=regsubsets(LogReportDelivTime~.,data=reports_serv_newlog,method="seqrep",nvmax=30)
+#summary(log.stepnv20)
+#summary(log.stepnv20)$adjr2
+#summary(log.stepnv20)$rss
+#summary(log.stepnv20)$bic
+
+par(mfrow=c(1,3))
+bics<-summary(log.stepnv20)$bic
+plot(1:31,bics,type="l",ylab="BIC",xlab="# of predictors")
+index<-which(bics==min(bics))
+points(index,bics[index],col="red",pch=10)
+
+adjr2<-summary(log.stepnv20)$adjr2
+plot(1:31,adjr2,type="l",ylab="Adjusted R-squared",xlab="# of predictors")
+index<-which(adjr2==max(adjr2))
+points(index,adjr2[index],col="red",pch=10)
+
+rss<-summary(log.stepnv20)$rss
+plot(1:31,rss,type="l",ylab="train RSS",xlab="# of predictors")
+index<-which(rss==min(rss))
+points(index,rss[index],col="red",pch=10)
+
+coef(log.stepnv20,10)
+```
+
+Final Model Adjusted $R^{2}$:
+```{r Obj1 Final Model Selection, cache=TRUE, echo=FALSE, warning=FALSE}
+final.model<-lm(LogReportDelivTime~SchedFreq + HourOfDay + DayOfMonth + ReportCategory + Server,data=reports_serv_newlog)
+summary(final.model)$adj.r.squared
+
+coef(final.model)
+```
 
 ### Checking Assumptions
 Linear Regression analysis has basic assumptions of residual normality, linearity of features, constant variance (equal spread), and independence of observations.
@@ -285,96 +365,9 @@ In conclusion, the mulit-linear model with 5 predictors leveraging a logged resp
 We also suspect that multiple linear regression isn't the best model for predicting runtime given this extremely variable dataset.  Several high leverage outliers keep the MLR model from tightening predictions to desirable tolerances.  Report delivery time varies from milliseconds to several days, which may be the result of a failed report which was restarted, or a large number of queued reports (such as those beginning at 6am on the first.)  Having indicators for restarted reports, or the count of reports in the queue at the time the report starts would be useful in predicting runtime.
 
 
-```{r , cache=TRUE, echo=FALSE}
-reports_serv_samp <- reports %>% filter(ReportId == "93") 
-
-reports_serv_new <- within(reports_serv_samp,
-rm(ReportId,Priority,RptFrmt,QueuedDateTime,RenderStartDateTime,ReportStartDateTime,ReportEndDateTime, RenderEndDateTime,GroupCustom,CurrencyCode,groupSF,groupFI,ReportBuildTime,QueueTime,LagTime,Agents,TestProdIndicator,ReportBytes,HourBinned,TimeBlock3h,TimeBlock4h,DateFrom,DateThru,queued,NumDays))
-
-## This should have been done in ETA section
-#Drop levels of unused server names
-#table(droplevels(reports_serv_new)$Server)
-#reports_serv_new$Server <- factor(reports_serv_new$Server)
-#levels(reports_serv_new$Server)
-
-
-#pairs(reports_serv_new[,-c(2,9)])
-
-#all_model<-lm(ReportDeliveryTime~., data=reports_serv_new)
-#summary(all_model)
-
-
-all_model_log<-lm(log(ReportDeliveryTime)~., data=reports_serv_new)
-summary(all_model_log)
 
 
 
-```
-
-```{r , cache=TRUE}
-reports_serv_newlog <- reports_serv_new
-reports_serv_newlog$LogReportDelivTime = log(reports_serv_newlog$ReportDeliveryTime)
-reports_serv_newlog <- na.omit(reports_serv_newlog)
-
-reports_serv_newlog <- within(reports_serv_newlog,
-rm(ReportDeliveryTime))
-
-
-log.fwdnv20=regsubsets(LogReportDelivTime~.,data=reports_serv_newlog,method="forward",nvmax=30)
-summary(log.fwdnv20)
-summary(log.fwdnv20)$adjr2
-summary(log.fwdnv20)$rss
-summary(log.fwdnv20)$bic
-
-
-par(mfrow=c(1,3))
-bics<-summary(log.fwdnv20)$bic
-plot(1:31,bics,type="l",ylab="BIC",xlab="# of predictors")
-index<-which(bics==min(bics))
-points(index,bics[index],col="red",pch=10)
-
-adjr2<-summary(log.fwdnv20)$adjr2
-plot(1:31,adjr2,type="l",ylab="Adjusted R-squared",xlab="# of predictors")
-index<-which(adjr2==max(adjr2))
-points(index,adjr2[index],col="red",pch=10)
-
-rss<-summary(log.fwdnv20)$rss
-plot(1:31,rss,type="l",ylab="train RSS",xlab="# of predictors")
-index<-which(rss==min(rss))
-points(index,rss[index],col="red",pch=10)
-
-  
-coef(log.fwdnv20,10)
-
-log.stepnv20=regsubsets(LogReportDelivTime~.,data=reports_serv_newlog,method="seqrep",nvmax=30)
-summary(log.stepnv20)
-summary(log.stepnv20)$adjr2
-summary(log.stepnv20)$rss
-summary(log.stepnv20)$bic
-
-par(mfrow=c(1,3))
-bics<-summary(log.stepnv20)$bic
-plot(1:31,bics,type="l",ylab="BIC",xlab="# of predictors")
-index<-which(bics==min(bics))
-points(index,bics[index],col="red",pch=10)
-
-adjr2<-summary(log.stepnv20)$adjr2
-plot(1:31,adjr2,type="l",ylab="Adjusted R-squared",xlab="# of predictors")
-index<-which(adjr2==max(adjr2))
-points(index,adjr2[index],col="red",pch=10)
-
-rss<-summary(log.stepnv20)$rss
-plot(1:31,rss,type="l",ylab="train RSS",xlab="# of predictors")
-index<-which(rss==min(rss))
-points(index,rss[index],col="red",pch=10)
-
-coef(log.stepnv20,10)
-
-final.model<-lm(LogReportDelivTime~SchedFreq + HourOfDay + DayOfMonth + ReportCategory + Server,data=reports_serv_newlog)
-summary(final.model)
-
-
-```
 
 ```{r , cache=TRUE}
 set.seed(1234)
