@@ -32,6 +32,7 @@ library(lsmeans)
 # import report data:
 load("./data/reports.RData")
 
+
 # import helper functions:
 source("./R/helperFunctions.R")
 
@@ -429,7 +430,7 @@ We also suspect that multiple linear regression isn't the best model for predict
 
 
 
-```{r , cache=TRUE}
+```{r Performance setup, cache=TRUE}
 
 
 #Formatting data for GLM net
@@ -453,8 +454,9 @@ testMSE_LASSO
 
 # Fit the final model on the training data
 model_lasso <- glmnet(x, y, alpha = 1, lambda = bestlambda)
+
 # Display regression coefficients
-coef(model_lasso)
+#coef(model_lasso)
 
 #coef(lasso.mod,s=bestlambda)
 
@@ -475,7 +477,7 @@ cv.out.ridge$lambda.min
 # Fit the final model on the training data
 model_ridge <- glmnet(x, y, alpha = 0, lambda = cv.out.ridge$lambda.min)
 # Display regression coefficients
-coef(model_ridge)
+#coef(model_ridge)
 
 # Make predictions on the test data
 predictions <- model_ridge %>% predict(xtest) %>% as.vector()
@@ -507,7 +509,7 @@ model_ela$bestTune
 
 # Coefficient of the final model. You need
 # to specify the best lambda
-coef(model_ela$finalModel, model_ela$bestTune$lambda)
+#coef(model_ela$finalModel, model_ela$bestTune$lambda)
 
 # Make predictions on the test data
 predictions_ela <- model_ela %>% predict(test) %>% as.vector()
@@ -523,7 +525,7 @@ data.frame(
 )
 
 RMSE_org_ELA <- RMSE(exp(predictions_ela), exp(ytest))
-
+RMSE_org_ELA
 ```
 
 
