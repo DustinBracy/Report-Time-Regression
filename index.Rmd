@@ -55,21 +55,21 @@ Gilsbar offers a comprehensive reporting package to both its internal employees 
 4. What are the biggest impacts on performance of reports?
 
 ## Data Description
-Gilsbar has provided report data spanning a 12 month period from January 2019 through January 2020. The available parameter list is very large, having over 500 parameters used in the past year.  In order to narrow the scope of the project, we focused on completed reports only, and determined the parameters show below would be most useful in predicting report run time. A description of other, non-utilized fields is avaiable below in the appendix. Also listed there is a crosswalk provided which groups like-type reports into 11 categories. 
+Gilsbar has provided report data spanning a 12 month period from January 2019 through January 2020. The available parameter list is very large, having over 500 parameters used in the past year.  In order to narrow the scope of the project, we focused on completed reports only, and determined the parameters show below would be most useful in predicting report run time. A description of other, non-utilized fields is available below in the appendix. Also listed there is a crosswalk provided which groups like-type reports into 11 categories. 
 
 ## Approach Methodology
-We'd like to tackle these questions using two separate models for interpretation.  For our first objective, we use Multiple Linear Regression techniques to predict runtime using several of the report metrics and features.  As our second objective, we will utilize two-way ANOVA techniques to compare ReportDeliveryTime vs Server, Report Category, and Report Format.
+We'd like to tackle these questions using two separate models for interpretation.  For our first objective, we use Multiple Linear Regression techniques to predict run-time using several of the report metrics and features.  As our second objective, we will utilize two-way ANOVA techniques to compare ReportDeliveryTime vs Server, Report Category, and Report Format.
 
 # Exploratory Data Analysis
 Our EDA analysis revealed that there are several categorical variables that don’t show an apparent linear relationship with ReportDeliveryTime.  Also, we found that our response variable, ReportDeliveryTime, is heavily right skewed and likely needs a log transformation in order to continue analysis.
 
-Given some additional knowledge of the dataset, we learned that only three production servers are useful for prediction (SQLODR2, SQLODR3 and SQLODR6) and that the ReportID (Specific Report) may be related to ReportBuildTime.  To explore this, we converted the ReportID to factors and conducted simple linear regression, giving us an R^2 of 0.79 which is very good, however the ReportID has over 1500 factor levels which make the explanation difficult when introducing additional features, so we continued to explore other features and temporarily ignore ReportID.
+Given some additional knowledge of the data-set, we learned that only three production servers are useful for prediction (SQLODR2, SQLODR3 and SQLODR6) and that the ReportID (Specific Report) may be related to ReportBuildTime.  To explore this, we converted the ReportID to factors and conducted simple linear regression, giving us an R^2 of 0.79 which is very good, however the ReportID has over 1500 factor levels which make the explanation difficult when introducing additional features, so we continued to explore other features and temporarily ignore ReportID.
 
 Our EDA resulted in the following additional observations:  
 
 * Submission times are most often 6am, with 9am and 6pm as secondary peak times.
 * The first day of Month is peak report day
-* Scheuled frequencies occur more often by Weekly, One-time, Monthly respectively.
+* Scheduled frequencies occur more often by Weekly, One-time, Monthly respectively.
 * Reinsurance reports grossly exceed delivery times of all other reports, PL reports deliver fastest.
 * Extract reports take the longest for servers to build, with miscellaneous building quickest.
 * Finance/Billing and Eligibility reports outnumber others, and PL reports are run the least.(Note: PL Category is newest, so does not contain a full year worth of data).
@@ -78,7 +78,7 @@ Our EDA resulted in the following additional observations:
 * 3 Servers processed most reports are SQLODR2, SQLODR3, SQLODR6.
 * SQLODR2, SQLODR3, and SQLODR6 are all marked as production, while the others are marked as test.
 * Popular Report formats are CSV/PDF followed by TXT/EXCEL.
-* Reports are genereated more on WeekDays with most occuring on Monday/Tuesday.
+* Reports are generated more on WeekDays with most occurring on Monday/Tuesday.
 * Priorities only have 0.1, 2, 3, and 10, with 10 as the majority.
 * SQLODR3 processes less reports than SQLODR2 or SQLODR6, and also appears to have a longer mean build time (i.e. worse performance) than the other two production servers.
 
@@ -229,14 +229,14 @@ ggplot(preds, aes(test$ReportBuildTime, exp(p[,1]))) + geom_point() + labs (y="P
 # Objective 1:
 Using known parameters of a desired report, can we predict how long it will take to run a particular type of report? 
 
-We have found it best to use all parameters made available to us within the transformed 'reports' dataset to fit the response variable “ReportDeliveryTime.”  Within the report, intuition tells us a few key parameters contribute strongly to the delivery time.  For example: ReportBuildTime, QueueTime, LagTime and ReportBytes, cannot be used because they are all unknown before report completion. 
+We have found it best to use all parameters made available to us within the transformed 'reports' data-set to fit the response variable “ReportDeliveryTime.”  Within the report, intuition tells us a few key parameters contribute strongly to the delivery time.  For example: ReportBuildTime, QueueTime, LagTime and ReportBytes, cannot be used because they are all unknown before report completion. 
 
 ## Simple Linear Regression Model
 Looking at ReportBuildTime vs ReportId gives us the best $R^{2}$ at approximately .79 and a 2.83s RMSE.  ReportDeliveryTime vs ReportId gives us an acceptable $R^{2}$ of about .49 and a 4.5s RMSE.  This performance is acceptable, but becomes very difficult to explain when adding additional features due to the large number of reports (over 1,000).  Thus, we will attempt to answer a broader question: given a report group how long should I expect to wait?
 
 ## Multiple Linear Regression subset
 
-Because the amount of data is very large and we didn’t find a dependency of ReportID with ReportDeliveryTime, we chose a single type of report “ReportID=93”, which is roughly 1/10 of the overall dataset as a representative subset and used it for the remaining analysis.
+Because the amount of data is very large and we didn’t find a dependency of ReportID with ReportDeliveryTime, we chose a single type of report “ReportID=93”, which is roughly 1/10 of the overall data-set as a representative subset and used it for the remaining analysis.
 
 With this subset, we filtered out a few more parameters and left 10 parameters: Server, ReportCategory, SchedFreq, HourOfDay, DayOfMonth, ReportCategory,Server, AgentCount, GroupCount,DelivMethod. 
 
@@ -257,16 +257,24 @@ summary(all_model)$adj.r.squared
 all_model_log<-lm(log(ReportDeliveryTime)~., data=reports_serv_new)
 summary(all_model_log)$adj.r.squared
 
-```
-
-### Model Selection
-Forward selection selected coefficients:
-```{r Obj1 Forward Selection, cache=TRUE, echo=FALSE, warning=FALSE}
 reports_serv_newlog <- reports_serv_new
 reports_serv_newlog$LogReportDelivTime <- log(reports_serv_newlog$ReportDeliveryTime)
 reports_serv_newlog <- na.omit(reports_serv_newlog)
-
 reports_serv_newlog <- within(reports_serv_newlog, rm(ReportDeliveryTime))
+
+
+set.seed(1234)
+index<-sample(1:dim(reports_serv_newlog)[1],20000,replace=F)
+train<-reports_serv_newlog[index,]
+test<-reports_serv_newlog[-index,]
+```
+
+### Model Selection
+#### Forward selection selected coefficients:  
+
+SchedFreqOneTime, SchedFreqWeek, ReportCategoryClaims, DayOfMonth04, HourOfDay21 , HourOfDay22, AgentCount, ReportCategoryEligibility, HourOfDay02, HourOfDay03 
+
+```{r Obj1 Forward Selection, cache=TRUE, echo=FALSE, warning=FALSE, fig.height=3}
 
 
 log.fwdnv20=regsubsets(LogReportDelivTime~.,data=reports_serv_newlog,method="forward",nvmax=30)
@@ -294,11 +302,35 @@ index<-which(rss==min(rss))
 points(index,rss[index],col="red",pch=10)
 
   
-coef(log.fwdnv20,10)
+#coef(log.fwdnv20,10)
+
+
+trainlog.fwdnv30=regsubsets(LogReportDelivTime~.,data=train,method="forward",nvmax=30)
+testASE<-c()
+#note my index is to 20 since that what I set it in regsubsets
+for (i in 1:31){
+  predictions_fwd<-predict.regsubsets(object=trainlog.fwdnv30,newdata=test,id=i) 
+  testASE[i]<-mean((test$LogReportDelivTime-predictions_fwd)^2)
+}
+trainlog.stepnv30=regsubsets(LogReportDelivTime~.,data=train,method="seqrep",nvmax=30)
+
+par(mfrow=c(1,1))
+plot(1:31,testASE,type="l",xlab="# of predictors",ylab="test vs train ASE",ylim=c(0,2))
+index<-which(testASE==min(testASE))
+points(index,testASE[index],col="red",pch=10)
+rss<-summary(trainlog.stepnv30)$rss
+lines(1:31,rss/10000,lty=3,col="blue")  #Dividing by 100 since ASE=RSS/sample size
+
+RMSE_org_Fwd <- RMSE(exp(predictions_fwd), exp(test$LogReportDelivTime))
+
+
 ```
 
-Sequential Repitition selected coefficients:
-```{r Obj1 Seq Rep Selection, cache=TRUE, echo=FALSE, warning=FALSE}
+#### Sequential Repetition selected coefficients:
+
+SchedFreqOneTime, SchedFreqWeek, DayOfMonth02, HourOfDay21, HourOfDay22, AgentCount, ReportCategoryEligibility, ReportCategoryMiscellaneous, HourOfDay02, HourOfDay03
+
+```{r Obj1 Seq Rep Selection, cache=TRUE, echo=FALSE, warning=FALSE, fig.height=3}
 log.stepnv20=regsubsets(LogReportDelivTime~.,data=reports_serv_newlog,method="seqrep",nvmax=30)
 #summary(log.stepnv20)
 #summary(log.stepnv20)$adjr2
@@ -321,77 +353,9 @@ plot(1:31,rss,type="l",ylab="train RSS",xlab="# of predictors")
 index<-which(rss==min(rss))
 points(index,rss[index],col="red",pch=10)
 
-coef(log.stepnv20,10)
-```
-
-Final Model Adjusted $R^{2}$ and selected coefficients:
-```{r Obj1 Final Model Selection, cache=TRUE, echo=FALSE, warning=FALSE}
-final.model<-lm(LogReportDelivTime~SchedFreq + HourOfDay + DayOfMonth + ReportCategory + Server,data=reports_serv_newlog)
-summary(final.model)$adj.r.squared
-
-coef(final.model)
-```
-
-### Checking Assumptions
-Linear Regression analysis has basic assumptions of residual normality, linearity of features, constant variance (equal spread), and independence of observations.
-
-The q-q plot below (and previous histogram) shows that the assumption of normality may be violated so we do need to log transform our response variables.  We confirmed this to be correct by fitting a new model after log transformation were performed. 
-
-After transofrmation we observed the q-q plot to exhbit qualities indicating the data is approximately normal: a mostly straight line following closely to the residual 0 line. 
-
-```{r Obj1 Assumptions}
-
-```
+#coef(log.stepnv20,10)
 
 
-
-
-
-
-			Residual Plots
-			Influential point analysis (Cook’s D and Leverage)
-
-		Compare Competing Models Optional (Helpful if using 2 model strategy)
-			Via:  Training and test set split or CV
-                                        Possible Metrics: (ASE, AIC, BIC, adj R2, etc)
-	
-### Parameter Interpretation
-		Interpretation  Required
-		Confidence Intervals Required
-	
-### Conclusion
-In conclusion, the mulit-linear model with 5 predictors leveraging a logged response gave the best MSE with avoidance of overfitting. We used a train and test split to validate the MSE across many method and reach this conclusion.  
-
-We also suspect that multiple linear regression isn't the best model for predicting runtime given this extremely variable dataset.  Several high leverage outliers keep the MLR model from tightening predictions to desirable tolerances.  Report delivery time varies from milliseconds to several days, which may be the result of a failed report which was restarted, or a large number of queued reports (such as those beginning at 6am on the first.)  Having indicators for restarted reports, or the count of reports in the queue at the time the report starts would be useful in predicting runtime.
-
-
-
-
-
-
-```{r , cache=TRUE}
-set.seed(1234)
-index<-sample(1:dim(reports_serv_newlog)[1],20000,replace=F)
-train<-reports_serv_newlog[index,]
-test<-reports_serv_newlog[-index,]
-
-trainlog.fwdnv30=regsubsets(LogReportDelivTime~.,data=train,method="forward",nvmax=30)
-testASE<-c()
-#note my index is to 20 since that what I set it in regsubsets
-for (i in 1:31){
-  predictions_fwd<-predict.regsubsets(object=trainlog.fwdnv30,newdata=test,id=i) 
-  testASE[i]<-mean((test$LogReportDelivTime-predictions_fwd)^2)
-}
-trainlog.stepnv30=regsubsets(LogReportDelivTime~.,data=train,method="seqrep",nvmax=30)
-
-par(mfrow=c(1,1))
-plot(1:31,testASE,type="l",xlab="# of predictors",ylab="test vs train ASE",ylim=c(0,2))
-index<-which(testASE==min(testASE))
-points(index,testASE[index],col="red",pch=10)
-rss<-summary(trainlog.stepnv30)$rss
-lines(1:31,rss/10000,lty=3,col="blue")  #Dividing by 100 since ASE=RSS/sample size
-
-RMSE_org_Fwd <- RMSE(exp(predictions_fwd), exp(test$LogReportDelivTime))
 
 testASE<-c()
 #note my index is to 20 since that what I set it in regsubsets
@@ -410,27 +374,70 @@ RMSE_org_Step <- RMSE(exp(predictions_step), exp(test$LogReportDelivTime))
 
 ```
 
-```{r , cache=TRUE}
+#### Final Model Adjusted $R^{2}$ and Selected coefficients:
+
+$R^{2}$ = .52
+
+SchedFreqOneTime, SchedFreqWeek, HourOfDay07,  HourOfDay08,  HourOfDay09, HourOfDay10,  HourOfDay11,  HourOfDay12, HourOfDay13,  HourOfDay14,  HourOfDay15, HourOfDay16,  HourOfDay17,  HourOfDay18, HourOfDay19,  HourOfDay20,  HourOfDay21, HourOfDay22,  HourOfDay23, DayOfMonth02, DayOfMonth03, DayOfMonth04, DayOfMonth05, DayOfMonth06, DayOfMonth07, DayOfMonth08, DayOfMonth09, DayOfMonth10, DayOfMonth11, DayOfMonth12, DayOfMonth13, DayOfMonth14, DayOfMonth15, DayOfMonth16, DayOfMonth17, DayOfMonth18, DayOfMonth19, DayOfMonth20, DayOfMonth21, DayOfMonth22, DayOfMonth23, DayOfMonth24, DayOfMonth25, DayOfMonth26, DayOfMonth27, DayOfMonth28, DayOfMonth29, DayOfMonth30, DayOfMonth31 ReportCategoryExtract, ServerSQLODR3, ServerSQLODR6
+
+```{r Obj1 Final Model Selection, cache=TRUE, echo=FALSE, warning=FALSE}
+final.model<-lm(LogReportDelivTime~SchedFreq + HourOfDay + DayOfMonth + ReportCategory + Server,data=reports_serv_newlog)
+summary(final.model)$adj.r.squared
+
+#coef(final.model)
+
 final.model.train<-lm(LogReportDelivTime~SchedFreq + HourOfDay + DayOfMonth + ReportCategory + Server,data=train)
 predictions_lm <- final.model.train %>% predict(test) %>% as.vector()
 
 RMSE_org_LM <- RMSE(exp(predictions_lm), exp(test$LogReportDelivTime))
+```
+
+### Checking Assumptions
+Linear Regression analysis has basic assumptions of residual normality, linearity of features, constant variance (equal spread), and independence of observations.
+
+The q-q plot below (and previous histogram) shows that the assumption of normality has much improved after log transforming our response variable.  We confirmed this to be correct by fitting the final model after log transformation. 
+
+After transformation we observed the q-q plot to exhibit qualities indicating the data is more normal: ideally we want a mostly straight line following closely to the residual 0 line. 
+
+```{r Obj1 Assumptions, fig.height=3, fig.width=3}
+# QQ Plot shows a slight departure from normality:
+ols_plot_resid_qq(final.model)
+# Cook's D shows no major leverage points (.003)
+ols_plot_cooksd_chart(final.model)
+# There are a few outliers with leverage in the sample, but not so much in the full data:
+ols_plot_resid_lev(final.model)
+# Histogram shows normality with a bit of right skew
+ols_plot_resid_hist(final.model)
+# Ideally we'd like to see a totally random cloud here
+ols_plot_resid_fit(final.model)
+# These outliers are impacting predictions fairly significantly
+ols_plot_obs_fit(final.model)
+
 
 ```
+
+
+	
+### Parameter Interpretation
+		Interpretation  Required
+		Confidence Intervals Required
+	
+### Conclusion
+In conclusion, the mulit-linear model with 5 predictors leveraging a logged response gave the best MSE with avoidance of over-fitting. We used a train and test split to validate the MSE across many method and reach this conclusion.  
+
+We also suspect that multiple linear regression isn't the best model for predicting run time given this extremely variable data-set.  Several high leverage outliers keep the MLR model from tightening predictions to desirable tolerances.  Report delivery time varies from milliseconds to several days, which may be the result of a failed report which was restarted, or a large number of queued reports (such as those beginning at 6am on the first.)  Having indicators for restarted reports, or the count of reports in the queue at the time the report starts would be useful in predicting run-time.
+
+
 
 ```{r , cache=TRUE}
 
 
 #Formatting data for GLM net
 x=model.matrix(LogReportDelivTime~.,train)[,-1]
-#y=log(train$ReportDeliveryTime)
 y=train$LogReportDelivTime
 
 xtest<-model.matrix(LogReportDelivTime~.,test)[,-1]
-#ytest<-log(test$ReportDeliveryTime)
 ytest<-test$LogReportDelivTime
-
-
 
 grid=10^seq(10,-2, length =100)
 lasso.mod=glmnet(x,y,alpha=1, lambda =grid)
@@ -477,6 +484,7 @@ testMSE_RIDGE<-mean((ytest-predictions)^2)
 testMSE_RIDGE
 
 plot(predictions, ytest, xlim = c(0,20), ylim = c(0,20))
+
 
 # Model performance metrics
 data.frame(
@@ -800,7 +808,7 @@ Using the table “Mean logged response of reports ran by time of day per server
 
 ```{r Appendix.ETL pipeline, eval=FALSE}
 
-tic('total runtime')
+tic('total run-time')
 
 # Note I have relabeled this originalReports
 load("./data/originalReports.RData")
