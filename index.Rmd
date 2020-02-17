@@ -86,7 +86,7 @@ Our EDA resulted in the following additional observations:
 * Priorities only have 0.1, 2, 3, and 10, with 10 as the majority.
 * SQLODR3 processes less reports than SQLODR2 or SQLODR6, and also appears to have a longer mean build time (i.e. worse performance) than the other two production servers.
 
-```{r EDA plots, fig.width=7.25, fig.height=4.5, echo=FALSE, cache=TRUE}
+```{r EDA plots, fig.width=7.25, fig.height=4.5, echo=FALSE, cache=TRUE, warning=FALSE}
 # Plot Categorical Variables in character or factor
 
 # Count By Server
@@ -124,19 +124,20 @@ e.categoryBuild <- reports %>% group_by(ReportCategory) %>% summarise(AvgTime=ro
 
 ## Count By ReportDeliveryTime
 reports$ReportDeliveryTime = as.numeric(reports$ReportDeliveryTime)
+
 e.deliveryHist <- ggplot(data=reports[!is.na(reports$ReportDeliveryTime),], aes(x=ReportDeliveryTime)) +
         geom_histogram(fill="orange", binwidth = 1000) + labs(title="Report Delivery Time", x="Report Delivery Time")
 
 ## Count By ReportDeliveryTime - log
 reports$ReportDeliveryTime = as.numeric(reports$ReportDeliveryTime)
+
 e.logDeliveryHist <- ggplot(data=reports[!is.na(reports$ReportDeliveryTime),], aes(x=log(ReportDeliveryTime))) +
-        geom_histogram(fill="orange") + labs(title="Log Report Delivery Time", x="x=log(Report Delivery Time)")
+        geom_histogram(fill="orange", binwidth = .2) + labs(title="Log Report Delivery Time", x="x=log(Report Delivery Time)")
 
 
 grid.arrange(e.freq, e.priority, e.format, e.delivery,  ncol=2, nrow=2)
 grid.arrange(e.server,e.weekday,  ncol=1, nrow=2)
-grid.arrange(e.deliveryHist,e.logDeliveryHist,  ncol=1, nrow=2)
-
+grid.arrange(e.deliveryHist, e.logDeliveryHist,  ncol=1, nrow=2)
 
 # Buildtime by server
 reports %>% ggplot(aes(x=log(ReportBuildTime), fill=Server)) + geom_density(alpha = 0.7) + labs(title="Report Build time colored by Server")   
@@ -146,7 +147,7 @@ reports %>% ggplot(aes(x=log(ReportBuildTime), fill=Server)) + geom_density(alph
 ```
 
 
-```{r EDA plots2, fig.width=7.25, fig.height=7.25, cache=TRUE, echo=FALSE}
+```{r EDA plots2, fig.width=7.25, fig.height=7.25, cache=TRUE, echo=FALSE, warning=FALSE}
 grid.arrange(e.categorySum, e.categoryDelivery, e.categoryBuild, ncol=1, nrow=3)
 
 grid.arrange(e.hour,e.month,  ncol=2, nrow=1)
@@ -681,7 +682,8 @@ Using the table “Mean logged response of reports ran by time of day per server
 *	The very late evening hours 8PM to midnight remain an option for scheduling reports. Care must be taken that any reports scheduled during that time do not run past midnight into the maintenance window.
 
 
-
+## Final Thoughts
+Special thanks to Gilsbar for sharing this data for our project. It added a layer of complexity and realism to use company data to solve an actual problem in a production environment. The report prediction has always been a great idea and viewed as a 'nice to have,' but to date, no one has dedicated time to the problem until now.  We faced a lot of early challenges in just pulling data out of the production environment in a way that would allow analysis, especially by several widely dispersed individuals. Extracting, anonymizing, tidying all took very many hours of work before we could even begin initial feature selection.  Now that we have established an initial analysis, it is something Gilsbar can further refine, and would be interesting to apply more advanced techniques to the data to see just how accurate we can make the predictions.
 
 
 # Appendix: Features
